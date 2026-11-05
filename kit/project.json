@@ -7,5 +7,6 @@
   "renderer": "auto",
   "tts": "auto",
   "sourcePolicy": "original-or-attributed",
-  "styleRefs": []
+  "styleRefs": [],
+  "defaultMode": "narrated"
 }

@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "centralQuestion": "Câu hỏi trung tâm mà tập phim trả lời là gì?",
+  "promise": "Sau tập phim, người xem hiểu hoặc làm được điều gì?",
+  "audience": "Người xem phổ thông chưa quen chủ đề.",
+  "sections": [
+    {
+      "sectionId": "preamble",
+      "heading": null,
+      "purpose": "Mở đầu bằng một quan sát cụ thể và đặt câu hỏi.",
+      "connectionToCentralQuestion": "Quan sát này tạo ra đúng câu hỏi mà tập phim trả lời.",
+      "whyHere": "Nó đứng trước mọi khái niệm để người nghe có lý do muốn biết.",
+      "audienceTakeaway": "Người nghe nhận ra điều cần giải thích.",
+      "claimRefs": []
+    }
+  ]
+}

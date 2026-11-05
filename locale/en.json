@@ -1,6 +1,6 @@
 {
   "meta": {
     "title": "Video studio presets",
-    "description": "Adds the Video Producer and Video Scene Worker agent presets for reusable, backend-agnostic video production."
+    "description": "Adds the Video Producer and Video Scene Worker presets plus nine skills for evidence-gated narration, reusable scenes, verified audio and backend-agnostic video production."
   }
 }

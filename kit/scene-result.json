@@ -1,10 +1,11 @@
 {
   "sceneId": "s01-hook",
-  "status": "PASS",
+  "status": "FAIL",
   "codePaths": [],
   "previewPaths": [],
   "qaReportPath": null,
   "backendVersion": null,
   "changedFiles": [],
-  "notes": "Example only; do not use as a PASS without evidence."
+  "reuse": "C",
+  "notes": "Example contract only; a real PASS requires delivered files and QA evidence."
 }

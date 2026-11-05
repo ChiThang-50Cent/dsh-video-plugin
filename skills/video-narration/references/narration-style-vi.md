@@ -22,6 +22,20 @@ Read the paragraph aloud before keeping it. If you run out of breath, split it. 
 
 Avoid a metronome of short declaratives: `Ta có ba. Bình phương là chín. Tiếp theo là bốn.` That is a slide, not speech.
 
+## A preferred teaching pattern (not a formula)
+
+For Vietnamese educational narration, the most reliable shape is usually:
+
+**curiosity → observation → reasoning → discovery → generalization**
+
+1. **Curiosity**: a concrete situation, contradiction or question the viewer can feel. Not "hôm nay chúng ta sẽ học..." and not a definition first.
+2. **Observation**: something specific to notice, count, compare or try — a small worked case, an image, a number the viewer can check.
+3. **Reasoning**: why the observation happens; the distinction, condition or derivation that makes it more than a coincidence.
+4. **Discovery**: name the idea the listener has just earned. This is the moment the abstraction is allowed to arrive.
+5. **Generalization**: state the rule, its scope and a boundary case, then return to the opening.
+
+This is a preference, not a mandate. A documentary may move by cause and consequence; a short may need one turn; an essay may argue from a thesis; a product explainer may start from a user's failure. Do not insert five labelled sections into a genre that does not need them. The invariant is that every step changes what the listener knows, and that abstraction arrives after the listener has a reason to want it.
+
 ## Transitions that do work
 
 A transition should state a reason, not a sequence number:

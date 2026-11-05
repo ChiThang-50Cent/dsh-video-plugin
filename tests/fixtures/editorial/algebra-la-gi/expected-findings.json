@@ -1,0 +1,27 @@
+{
+  "schemaVersion": 1,
+  "centralQuestion": "Đại số là gì, và vì sao nó là một ngôn ngữ?",
+  "required": [
+    {
+      "code": "opening.meta-greeting",
+      "excerptIncludes": "Chào mừng các bạn đến với video Đại số là gì.",
+      "why": "A forced greeting/agenda postpones the concrete question."
+    },
+    {
+      "code": "continuity.external-digression",
+      "excerptIncludes": "định luật vạn vật hấp dẫn của Newton",
+      "why": "The Newton section enters a different domain without connecting it to the central question."
+    },
+    {
+      "code": "repetition.verbatim",
+      "excerptIncludes": "Đại số là một ngôn ngữ.",
+      "why": "The same abstract conclusion is repeated instead of earning a new step."
+    },
+    {
+      "code": "reasoning.unexplained-identity-switch",
+      "excerptIncludes": "chín mươi chín nhân một trăm lẻ một",
+      "why": "The narration moves from the square of a sum to difference of squares without introducing the new identity in speech."
+    }
+  ],
+  "notSimulated": "These findings must be produced by the deterministic editorial reviewer from the narration text; the fixture contains no status: FAIL field."
+}

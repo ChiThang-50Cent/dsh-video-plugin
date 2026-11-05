@@ -1,0 +1,31 @@
+{
+  "schemaVersion": 2,
+  "narrationFile": "narration.md",
+  "narrationSha256": "0000000000000000000000000000000000000000000000000000000000000000",
+  "status": "blocked",
+  "reviewedAt": null,
+  "reviewer": {
+    "kind": "author",
+    "id": "main-agent",
+    "method": "draft",
+    "readFullScript": false
+  },
+  "criteria": {
+    "accuracy": "needs-work",
+    "audienceFit": "needs-work",
+    "narrativeArc": "needs-work",
+    "reasoning": "needs-work",
+    "continuity": "needs-work",
+    "spokenLanguage": "needs-work",
+    "pacing": "needs-work",
+    "styleAndOriginality": "needs-work"
+  },
+  "criteriaEvidence": {},
+  "blockers": ["Example contract only; replace with a real evidence-based review."],
+  "actionableFindings": [],
+  "throughlineMap": "throughline-map.json",
+  "claimCheckFile": "claim-check.json",
+  "reviewPasses": 0,
+  "independentReview": { "required": false, "status": "not-required" },
+  "revision": 1
+}

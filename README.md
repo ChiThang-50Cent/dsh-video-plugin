@@ -1,99 +1,200 @@
-# Portable Video Studio for DeepSeek Harness v0.2.2-rc.1
+# Portable Video Studio for DeepSeek Harness 0.5.0
 
-This repository is two things in one checkout: an installable **DSH bundle** that adds two Agent Presets (`video-producer`, `video-scene-worker`), and a portable **video-studio workspace** with nine skills, contract examples, deterministic helpers and a per-episode tree. It is backend-agnostic and starts on a fresh machine; no `math-motion` project, HyperFrames, OmniVoice, Python runtime, or particular video genre is required.
+This repository is two things in one checkout: an installable **DSH bundle** that adds two Agent Presets (`video-producer`, `video-scene-worker`), and a portable **video-studio workspace** with nine skills, contract examples, deterministic helpers and a per-episode tree. It is backend-agnostic: no `math-motion` project, HyperFrames, OmniVoice, Python runtime, or particular genre is required.
+
+The 0.5 line makes narration quality a real evidence-based gate, adds a meaning-preserving pronunciation contract, separates lint from release, and hardens workspace, audio, metrics and worker integration.
 
 ## Contents
 
-- `package.json`, `index.js`, `cordis.patch.yml`, `skills/`, `locale/`, `icon.svg`: the DSH bundle payload. `package.json` declares `dsh.bundle.patch`; `cordis.patch.yml` inserts the Studio plugin and the two Agent Presets. The Studio plugin registers the nine video skills with `ctx.skills.register`, so every session in the profile gets them regardless of its working directory, and it prepends the resolved studio roots to each skill body.
-- `AGENTS.md`: standing rules for the studio checkout.
-- `skills/`: nine targeted DSH skills, registered profile-wide by the bundle so they load in every workspace. `video-narration/references/` carries the Vietnamese style guide, annotated before/after examples, and the G0 review rubric. They are not project-discovered; a workspace that keeps its own `video-*` copies under `.agents/skills` would outrank them by project rank.
-- `kit/`: example project and scene contracts (`project.json`, `scene-contract.json`, `scene-result.json`).
-- `scripts/`: zero-dependency Node helpers for preflight, new-episode, episode contract lint, the narration G0 gate and final MP4 metadata QA. They are optional aids, not a new renderer.
-- `library/`: approved reusable templates and scenes catalog, plus narration style packages under `library/styles/<id>/` (metadata, source, derived notes).
-- `projects/`: one directory per series/project; `episodes/` contains self-contained episodes.
-- `docs/`: rationale, log bottlenecks, runbook and troubleshooting.
+- `package.json`, `index.js`, `cordis.patch.yml`, `skills/`, `locale/`, `icon.svg`: DSH bundle payload. The Studio plugin registers the nine skills with `ctx.skills.register` for every session in the profile and prepends the resolved studio roots.
+- `AGENTS.md`: standing rules for the studio.
+- `skills/`: nine DSH skills. `video-narration/references/` carries the Vietnamese style guide, annotated examples and the full G0 review/claim/review schemas.
+- `kit/`: example contracts: project, production mode, through-line map, claim check, narration review, segments, scene contract/result, worker plan.
+- `scripts/`: zero-dependency Node helpers for workspace init, episode creation, narration integrity/editorial gates, revision, narration lint, editorial pre-scan, scene promotion, episode lint/release, audio preflight/QA, media QA, worker validation and log-based metrics.
+- `library/`: approved scene catalog, templates and narration style packages.
+- `projects/`: one directory per series; `episodes/` holds self-contained episodes.
+- `docs/`: architecture, runbook, acceptance checks, examples and DSH notes.
 
 ## Fresh machine
 
-1. Install Node.js 20+ and DSH `0.2.2-rc.1`. Pin the package explicitly instead of using `@latest` while npm's `latest` points at a different channel:
+1. Install Node.js 20+ and DSH `0.2.2-rc.1` (pin the package explicitly):
 
    `npx -y @deepseek-ai/dsh@0.2.2-rc.1 --version`
 
-2. Extract this ZIP to `video-studio`, start in that directory and (optionally) initialize its own Git repository:
+2. Extract this ZIP to `video-studio`, enter it and optionally `git init`.
 
-   `git init`
+3. Run `node scripts/preflight.mjs` to inspect render/audio tools. Preflight installs nothing and does not treat a GPU as a ready TTS backend.
 
-3. Run `node scripts/preflight.mjs` to inspect available render/audio tools. No software is installed by preflight.
+4. Install the bundle from the Web **Plugins** page (local path) or with `plugin_manager` `action: install_bundle`. The bundle applies `cordis.patch.yml` and shows `Video studio presets`.
 
-4. Install the bundle in the profile you use. From the Web **Plugins** page choose install from a local path, or ask the agent to run `plugin_manager` with `action: install_bundle` and `target` set to the absolute path of this checkout. Installation links the checkout into the profile, applies `cordis.patch.yml` as one layer, and enables the bundle by default. The profile then shows `Video studio presets` with the two preset rows.
-
-5. Select `video-producer` from Agent Presets in a new session. The presets are available to every session in that profile, not only to this checkout.
-
-6. Invoke `/video-produce` or send a natural-language request asking for a draft-only plan. No tiny video benchmark is necessary; after the config smoke check, run a real desired video.
+5. Select `video-producer` in a new session, then invoke `/video-produce` or ask naturally. The skills are available to every session in the profile.
 
 ### Using the studio from another workspace
 
-The bundle is profile-wide, not project-local. In any workspace, open a new task, pick **Video Producer**, and the `video-*` skills are already in the catalog.
-
-Every loaded studio skill starts with the roots it resolved:
+Every loaded skill begins with:
 
 ```text
-> Studio root (code and output data): `/path/to/video-studio`
-> Standing rules: `/path/to/video-studio/AGENTS.md` — read it before the first production action.
-> Resolve every `projects/`, `library/`, `scripts/` and `.cache/` path against these roots, never against the session working directory.
+> Studio code root: `/path/to/video-studio`
+> Studio data root: `/data/video` (projects, library, cache)
+> Standing rules: `/path/to/video-studio/AGENTS.md` ...
 ```
 
-Outputs (`projects/`, `library/`, `.cache/`) go to the studio data root, which defaults to this checkout. To keep videos outside the plugin directory, launch DSH with `VIDEO_STUDIO_ROOT=/path/to/data`, or set `dataRoot` in the `video-studio` plugin row. `node scripts/studio-root.mjs` prints the effective roots as JSON, and `scripts/new-episode.mjs`, `scripts/validate-episode.mjs` and `scripts/promote-scene.mjs` honour the same root.
-
-### Narration gate (G0)
-
-Narrated productions follow: intake -> narration draft -> claim audit -> editorial pass -> review -> **frozen narration** -> storyboard/reuse -> TTS/timeline -> scenes -> QA/master. Nothing audio- or scene-related may start from a draft.
-
-An episode carries `narration.md`, `claim-check.json` and `narration-review.json`. The review records all eight rubric verdicts, blockers, findings and the exact SHA-256 of the approved file. The deterministic gate checks the review, the hash, the claims, and (once planned) that the TTS segment concatenation reproduces the spoken prose exactly:
+Resolve `projects/`, `library/`, `scripts/` and `.cache/` against these roots. **Code root** is the installed package (skills, scripts, kit, built-in library payload); **data root** is user production data. The data root defaults to the package and can be moved:
 
 ```bash
-node scripts/validate-narration.mjs projects/<series>/episodes/ep-001
-node scripts/validate-narration.mjs projects/<series>/episodes/ep-001 --segments audio/segments.json --require-segments
+VIDEO_STUDIO_ROOT=/data/video node scripts/init-workspace.mjs
+# or
+node scripts/init-workspace.mjs --data-root /data/video
 ```
 
-The command exits `0` only when audio may start. A changed word invalidates the review hash and only the affected audio chunks; `draft-only` stops after the reviewed draft. `scripts/new-episode.mjs` scaffolds a blocked review, so a fresh episode cannot synthesize by accident.
+Precedence is explicit `--data-root`/plugin `dataRoot` > `VIDEO_STUDIO_ROOT` > `studio.config.json` > package root. The plugin and every CLI helper use the same resolver. If `dataRoot` is set only in the plugin row, export the same value for shell helpers or pass `--data-root`; a profile row is not visible to a CLI process. `scripts/studio-root.mjs` prints effective roots. Initialization is idempotent and copies missing built-in styles/catalog, even when the plugin came from an npm tarball; it never overwrites user files.
 
-### Style references
+Install the npm payload separately from production data. The package deliberately excludes user-provided transcripts and includes `library/catalog.json`, `library/styles/default.json` and the public style metadata/notes needed to initialize.
 
-A series can point at reusable narration styles in `project.json`:
+## Narration-first production (G0)
 
-```json
-{ "styleRefs": ["indeterminate-forms"] }
+Workflow: intake → through-line map → complete narration draft → claim audit → editorial critique → independent review when risk requires it → frozen narration → storyboard/reuse → TTS/timeline → scenes → QA → release.
+
+### Two gates
+
+```bash
+node scripts/validate-narration.mjs <episode-dir> --integrity
+node scripts/validate-narration.mjs <episode-dir> --editorial
+node scripts/validate-narration.mjs <episode-dir>              # both, default
 ```
 
-Each id resolves to `library/styles/<id>/` with `style.json`, the source reference and `notes.md`. Agents read the notes (what to take, what not to copy, voice, scope, factual/mathematical audit) and never paste the reference into `narration.md` or the installed skill. The bundled `indeterminate-forms` package stores the user-provided Vietnamese lecture with its rights note and an audit that flags its one-sided limit framing.
+- **Mechanical integrity** checks schemas, hash, references, required fields, claim evidence/locations, through-line coverage/order, review evidence locations and exact segment coverage.
+- **Editorial/content** checks that the review is evidence-based: every criterion is pass with real cited excerpts, every section is covered, findings are resolved as claimed, high-risk claims are cited, and known high-confidence defects are addressed.
+- Neither gate proves mathematical or factual truth. The cited review, independent reviewer and human accountability are the trust basis; the validator must never be described as proving a claim.
+
+### Artifacts
+
+An episode carries:
+
+- `throughline-map.json` — central question, promise, audience, and every section's purpose, connection, position and takeaway.
+- `narration.md` — continuous spoken prose; headings, blockquotes, fenced blocks and HTML comments are non-spoken.
+- `claim-check.json` (schema v2) — each claim has `verified`, risk, a source/derivation or evidence, and a real narration location. High-risk claims need evidence and a location. An empty claim list cannot silently pass claim-bearing content.
+- `narration-review.json` (schema v2) — eight criteria with per-criterion excerpts and notes, reviewer identity, complete-section coverage, findings with severity/evidence/proposed fix/resolution status, exact SHA-256, and an `independentReview` block when risk is high.
+- `audio/segments.json` (schema v2) — canonical `text` exactly reproduces the frozen prose; pronunciation changes require declared overrides.
+
+A quality PASS requires all eight criteria `pass`, empty `blockers`, no open blocking findings, evidence citations, and a matching hash. Open blocking findings fail G0 even if `blockers` is empty. A high-risk or quality-sensitive episode needs one separate review pass with fresh context (prefer a DSH subagent); see `video-narration/references/script-review.md`.
+
+### Spoken-text contract
+
+`text` is canonical wording. `displayText` must equal it. `spokenText` may differ only through `pronunciation.overrides` with `from`, `to`, `kind`, `provenance` and `justification`:
+
+- `16` → “mười sáu” is valid.
+- `trừ` → `cộng`, a sign flip, a changed number or an omitted quantity is invalid **even if a review marks it approved**.
+- An ambiguous but meaning-preserving reading (`trừ` → `dấu trừ`) needs `reviewed`, `reviewedBy` and a resolved `reviewRef`.
+- The validator reconstructs `spokenText` from declared overrides and compares the semantic fingerprint of numbers/operators/signs.
+
+### Revisions
+
+Never hand-edit a frozen script. Use:
+
+```bash
+node scripts/revise-narration.mjs <episode> --from new.md --reason "why the approved script changes"
+```
+
+It archives the old narration/review under `narration-revisions/`, blocks the review with the new hash, moves the old segment manifest aside, blocks the claim audit to `PENDING`, and marks the through-line, storyboard, timeline and audio manifest stale. If a released master exists, a protected `exports/master.stale.json` marker is written; release fails until a new master is rendered and the marker removed. A released master is protected unless `--allow-released` is explicit.
+
+### Migration from v1 reviews
+
+Schema-v1 `narration-review.json`/`claim-check.json` passes are **not** re-certified by the evidence gate. Existing released masters and locked narration are untouched. To continue an older episode, scaffold blocked v2 files without rewriting history:
+
+```bash
+node scripts/migrate-narration.mjs <episode>     # writes *.migrating.json only
+```
+
+Fill the through-line, claims and cited review, rename the three files to their canonical names after a genuine review, then run `validate-narration.mjs --gate`. See `docs/migration-v05.md`.
+
+### Modes
+
+`production.json.mode` is `narrated`, `silent`, `text-only` or `mixed`.
+
+- `narrated`/`mixed`: narration G0 and audio QA required.
+- `silent`/`text-only`: no fake narration, claims or review. Visual/media QA and, where present, music/SFX/subtitles are the gates.
+
+Create with `node scripts/new-episode.mjs <series> <ep-001> --mode silent`. A fresh episode is structurally lint-clean but release status `INCOMPLETE`.
+
+## Audio preflight and runtime
+
+Before batch speech:
+
+```bash
+node scripts/audio-preflight.mjs --provider espeak-ng --voice-reference voice.wav \
+  --synthesize-sample --json
+```
+
+- `nvidia-smi` proves hardware, not that the provider uses it. The provider command, configured device probe, voice reference and short measured sample must pass. `--require-gpu` refuses an unknown/CPU backend instead of silently falling back.
+- Voice reference checks cover readability, duration, sample rate, silence and clipping; language/timbre fit still needs listening.
+- Use bounded jobs with explicit timeouts/retries (`scripts/lib/bounded.mjs`). Never retry forever.
+- `node scripts/qa-audio.mjs <episode> --segments audio/segments.json [--audio]` checks numbers/operators/omissions deterministically and, with `--audio`, silence/clipping. ASR is optional advisory evidence, not truth.
+- Measure every WAV; never use word-count estimates as measured timing. Preserve valid caches and attribution.
+
+## Scene library and reuse
+
+```bash
+node scripts/promote-scene.mjs intro-template scene.mjs preview.png qa.json \
+  --backend browser --version 2 --purpose "Opening title" --tags intro,title
+```
+
+Promotion works on an empty library, creates parents/catalog idempotently, rejects invalid/contradictory QA, collisions and non-project inputs, stages files, records source/preview/QA hashes, template version and backend compatibility, and atomically updates the catalog. A failed promotion leaves the old catalog intact.
+
+Classification remains A (template), B (copy/patch), C (custom). Every scene needs a reason and `reuseFrom` where applicable. Never overwrite an accepted id.
+
+## Lint vs release
+
+```bash
+node scripts/validate-episode.mjs <episode> --lint       # work in progress
+node scripts/validate-episode.mjs <episode> --release    # delivery
+```
+
+`--lint` checks structure only. `--release` requires a real master verified by ffprobe and hash, `qa/final.json` PASS, `qa/media.json` bound to the current file, scene QA for every scene, G0 and audio consistency for narrated/mixed, and no unresolved stale marker. A fresh or incomplete episode is `INCOMPLETE`, never PASS. Media QA is metadata-only by default; `--quality`/`--subtitles` are targeted and optional, so narration/code edits do not trigger a full-media pass.
+
+## Worker isolation
+
+- Default: at most **two concurrent** scene workers. `maxDepth` (nesting) is a different control.
+- Workers own `work/<task-id>/`; the main agent owns narration, global timeline, assets and library promotion.
+- Validate plans and results before integration:
+
+```bash
+node scripts/validate-workers.mjs plan plan.json --max-concurrency 2 --max-depth 1
+node scripts/validate-workers.mjs result <episode> scene-result.json \
+  --work work/s03 --allow 'work/s03/**'
+```
+
+The result check rejects changed files outside the work directory/allowlist, protected artifacts and symlink escapes. This is post-hoc review, **not** a filesystem sandbox; prompt text is not security. Use the DSH child session sandbox where available.
+
+## Metrics from DSH logs
+
+```bash
+node scripts/collect-metrics.mjs --session <main-session-id> --out reports/metrics.json
+node scripts/collect-metrics.mjs --episode <episode-dir> --json
+```
+
+The collector reads persisted DSH session JSONL (plain or zstd), follows `parentSession` to include scene workers, and separates wall-clock union, active turns, tool execution/union/overlap, observed model latency, multi-agent overlap, worker concurrency (distinct from delegation depth), tokens, cached tokens, retries, failed jobs and image reads. Missing data is `null`/`unavailable`; manual estimates are never labelled measured.
+
+## Style references
+
+A project opts in with `project.json.styleRefs: ["indeterminate-forms"]`. Each id resolves to `<dataRoot>/library/styles/<id>/` with `style.json`, notes and optionally a source reference. The source transcript may be omitted from an installed package when `style.json` declares `sourceBundled: false` and `externalSource`; notes remain the reusable extract. Validate with:
 
 ```bash
 node scripts/validate-style-refs.mjs projects/<series>
 ```
 
-### Checking the patch without installing
+## Tests and package checks
 
-A non-persistent dry run validates the same YAML without changing the profile:
+```bash
+node --test tests/*.test.mjs
+node --check index.js
+npm pack --dry-run
+```
 
-`npx -y @deepseek-ai/dsh@0.2.2-rc.1 web --patch cordis.patch.yml --dump-config`
-
-Do not install the bundle and also pass `--patch cordis.patch.yml` to the same runtime: the preset ids would be declared twice and declaration loading fails.
+The suite covers the false limit/self-review regression, unresolved blocking findings, missing claim evidence, spokenText semantic changes and valid pronunciation, external data roots, npm-package initialization, first-scene promotion and failure isolation, empty-episode release status, silent/text-only release, metrics aggregation, audio preflight, worker isolation, editorial evaluation fixtures and style validation.
 
 ## Example request
 
-> Use /video-produce to make episode 01 of a Vietnamese series about why negative times negative is positive. I will supply source material. Write natural narration before dividing it into shots; use existing PASS templates; at most two coding scene workers; measure actual timing and produce a narrated 1080p MP4. If an essential source or production tool is missing, tell me exactly what is missing rather than inventing it.
+> Use /video-produce for a 10-minute Vietnamese explainer on why negative times negative is positive. Build the through-line map first, write continuous narration, audit every claim with a location, run the editorial and independent review, and freeze it. Use existing PASS templates before new scenes, at most two scene workers, verified audio preflight and a real narrated 1080p MP4. If a source or backend is missing, tell me exactly what is missing.
 
-## Expected episode tree
-
-`projects/toan-hoc-chan-phuong/episodes/ep-001/` has the brief, approved narration plus `claim-check.json`/`narration-review.json`, storyboard, timeline, immutable sources, scene modules, `audio/segments.json` and stems, QA reports, a final MP4 and production report. Ephemeral worker scratch lives in `work/`; shared validated examples live under `library/`, never inside each episode's output folder.
-
-## Limitations
-
-- The bundle was installed on `0.2.2-alpha.3` and re-validated on `0.2.2-rc.1`, where the preset roster reports both presets as loadable. On rc.1 `@deepseek-ai/dsh-tool-fs-search` requires `sampleOverCapGlobResults`; keep that config when editing the patch. Recheck the child list if a future release renames a row or field.
-- Installed preset display depends on the release's Agent Preset UI. The bundle's own title, description and icon live in `locale/` and `icon.svg`; the preset rows themselves carry no icon and use the panel's default artwork.
-- The included Node utilities do not themselves synthesize audio or render video. A real backend such as FFmpeg, Remotion or Blender must be available and configured based on the project.
-- Scene A/B/C reuse is a workflow classification; the bundle begins with an empty catalog. Successful productions grow the library as templates are promoted.
-- The 9 skills are lightweight instruction bundles and do not imply 9 concurrently running agents.
-
-See `docs/architecture.md`, `docs/dsh.md`, `docs/log-based-improvements.md`, and `docs/acceptance.md`.
+See `docs/architecture.md`, `docs/acceptance.md`, `docs/examples.md`, `docs/dsh.md` and `docs/log-based-improvements.md`.

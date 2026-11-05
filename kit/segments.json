@@ -1,0 +1,18 @@
+{
+  "schemaVersion": 2,
+  "narrationSha256": "0000000000000000000000000000000000000000000000000000000000000000",
+  "segments": [
+    {
+      "id": "seg-001",
+      "paragraphStart": 1,
+      "text": "Exact prose copied from the frozen narration.",
+      "displayText": "Exact prose copied from the frozen narration.",
+      "spokenText": "Exact prose copied from the frozen narration.",
+      "pronunciation": {
+        "version": 1,
+        "overrides": []
+      },
+      "audio": "narration/seg-001.wav"
+    }
+  ]
+}

@@ -1,6 +1,6 @@
 # Annotated before/after examples
 
-These are short, original illustrations of the difference between scene-driven writing and listener-first writing. They are not scripts to reuse verbatim, and they are not a fixed template: a 35-second short, a history documentary, and a proof need different pacing. Read them before drafting any nontrivial explanation.
+These are short illustrations of the difference between scene-driven writing and listener-first writing, plus one editorial evaluation case. They are not scripts to reuse verbatim, and they are not a fixed template: a 35-second short, a history documentary, and a proof need different pacing. Read them before drafting any nontrivial explanation.
 
 For every pair, the "why" is about what a listener can follow with the screen off — not about drama or word count.
 
@@ -115,3 +115,19 @@ Correctness note: a real production must cite the specific conservation and arch
 - "Như bạn thấy" when the listener cannot see the referenced object.
 - A conclusion that summarizes the sections instead of the idea.
 - Treating an engaging paragraph as evidence that its mathematics is right.
+
+
+## 5. Editorial evaluation: the previous "Đại số là gì?" script
+
+This case is not a before/after rewrite to copy. It is the regression fixture at `tests/fixtures/editorial/algebra-la-gi/`. It reconstructs the weaknesses recorded for the earlier production so the editorial reviewer can prove it detects them from text, not from a status field.
+
+### Recorded weaknesses
+
+1. **Forced opening.** "Chào mừng các bạn đến với video Đại số là gì. Hôm nay chúng ta sẽ cùng nhau tìm hiểu..." The film announces itself and previews an agenda before giving the listener a concrete observation. Replace it with the observation itself; the title can carry the introduction.
+2. **Disconnected Newton digression.** A section begins "Nhân đây, hãy nói về một định luật nổi tiếng của vật lý..." and explains universal gravitation. It is not wrong; it is not connected in speech to the central question "Đại số là gì?". A legitimate cross-domain example must state in its opening why it is the same idea, or it reads as a different video.
+3. **Repeated abstract conclusions.** "Đại số là một ngôn ngữ." appears as a standalone conclusion more than once, and the ending restates it again. Repetition may be rhetorical, but here each occurrence asserts the thesis instead of adding a consequence, so the listener does not learn a new step.
+4. **Unexplained identity switch.** The script explains `(a + b)^2` and its `2ab` term, then jumps to "Lấy ví dụ chín mươi chín nhân một trăm lẻ một" and uses `a^2 - b^2`. The displayed derivation appears after the spoken example; a listener has only heard the square-of-a-sum identity. The fix is to name and state the new identity in speech before using it.
+
+### Required reviewer output
+
+The evaluation expects findings with codes `opening.meta-greeting`, `continuity.external-digression`, `repetition.verbatim` and `reasoning.unexplained-identity-switch`. Each must quote the real sentence, identify the paragraph/section, explain the listening problem, give evidence/reasoning, propose the correction, and carry a resolution status. The fixture contains no fake `status: "FAIL"`; the evaluator must derive the findings. With those findings unresolved, a review claiming PASS fails the editorial gate. This is the standard for all genres, not a math-only exception.

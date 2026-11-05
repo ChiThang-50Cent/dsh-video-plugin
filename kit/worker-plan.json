@@ -1,0 +1,9 @@
+{
+  "schemaVersion": 1,
+  "maxConcurrency": 2,
+  "maxDelegationDepth": 1,
+  "workers": [
+    { "id": "w1", "sceneId": "s03-example", "delegationDepth": 1, "startedAt": 0, "finishedAt": 120 },
+    { "id": "w2", "sceneId": "s04-example", "delegationDepth": 1, "startedAt": 10, "finishedAt": 130 }
+  ]
+}

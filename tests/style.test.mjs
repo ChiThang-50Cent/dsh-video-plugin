@@ -69,9 +69,45 @@ test('the CLI reports a passing project with exit 0', (t) => {
   const { project, library } = tempProject(t)
   addStyle(library, 'demo')
   fs.writeFileSync(path.join(project, 'project.json'), JSON.stringify({ schemaVersion: 1, styleRefs: ['demo'] }))
-  const result = spawnSync(process.execPath, [script, project], { encoding: 'utf8' })
+  const result = spawnSync(process.execPath, [script, project, '--library', library], { encoding: 'utf8' })
   assert.equal(result.status, 0, result.stdout + result.stderr)
   assert.match(result.stdout, /RESULT: PASS/)
+})
+
+test('an installed package may exclude its source reference with an explanation', (t) => {
+  const { project, library } = tempProject(t)
+  addStyle(library, 'external', { source: 'reference.vi.md', sourceBundled: false, externalSource: 'The transcript stays in the user data library and is not redistributed.' })
+  fs.rmSync(path.join(library, 'styles', 'external', 'reference.md'))
+  fs.writeFileSync(path.join(project, 'project.json'), JSON.stringify({ schemaVersion: 1, styleRefs: ['external'] }))
+  const result = validateStyleRefs(project, { library })
+  assert.equal(result.ok, true, result.errors.join('\n'))
+  assert.match(result.warnings.join('\n'), /not bundled/)
+})
+
+test('a missing source needs sourceBundled: false and an externalSource note', (t) => {
+  const { project, library } = tempProject(t)
+  addStyle(library, 'broken-source', { source: 'reference.vi.md', sourceBundled: false })
+  fs.rmSync(path.join(library, 'styles', 'broken-source', 'reference.md'))
+  fs.writeFileSync(path.join(project, 'project.json'), JSON.stringify({ schemaVersion: 1, styleRefs: ['broken-source'] }))
+  const result = validateStyleRefs(project, { library })
+  assert.equal(result.ok, false)
+  assert.match(result.errors.join('\n'), /externalSource/)
+
+  addStyle(library, 'source-bundled-true', { source: 'reference.vi.md', sourceBundled: true })
+  fs.rmSync(path.join(library, 'styles', 'source-bundled-true', 'reference.md'))
+  fs.writeFileSync(path.join(project, 'project.json'), JSON.stringify({ schemaVersion: 1, styleRefs: ['source-bundled-true'] }))
+  const result2 = validateStyleRefs(project, { library })
+  assert.equal(result2.ok, false)
+  assert.match(result2.errors.join('\n'), /source file is missing/)
+})
+
+test('duplicate style references are rejected with a clear message', (t) => {
+  const { project, library } = tempProject(t)
+  addStyle(library, 'demo')
+  fs.writeFileSync(path.join(project, 'project.json'), JSON.stringify({ schemaVersion: 1, styleRefs: ['demo', 'demo'] }))
+  const result = validateStyleRefs(project, { library })
+  assert.equal(result.ok, false)
+  assert.match(result.errors.join('\n'), /more than once/)
 })
 
 test('the project contract carries an empty styleRefs list', () => {

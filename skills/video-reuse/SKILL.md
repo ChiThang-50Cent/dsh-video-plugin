@@ -1,20 +1,33 @@
 ---
 name: video-reuse
-description: Find, adapt, register, and promote validated video scene templates and components across episodes and genres. Use before writing new scene code or when building a series library from successful scenes.
+description: Search, adapt, register, and promote validated scene templates and components across episodes and genres. Use before writing new scene code or when growing a series library from successful scenes.
 ---
 
 # Reuse-first scene library
 
-Search `library/catalog.json` FIRST. Match by audience function and animation mechanism, not merely title keywords. For top candidates inspect metadata, the nearest accepted scene source, its params and one representative screenshot.
+Search `library/catalog.json` FIRST. Match by audience function and animation mechanism, not title keywords. Inspect metadata, the nearest accepted source, its params and one representative screenshot.
 
-A = instantiate tested template with parameters, no coding worker.
-B = copy/patch one accepted scene, minimize changed surface, rerun changed-content checks.
-C = custom only when A/B cannot communicate the idea without distortion. Reuse primitive components and styles.
+A = instantiate a tested template with parameters, no coding worker.
+B = copy/patch one accepted scene with a minimal diff; rerun changed-content checks.
+C = custom only when A/B cannot communicate the idea without distortion. Reuse primitive components/styles.
 
-`library/catalog.json` entries: `id`, `category`, `purpose`, `tags`, `backend`, `sourcePath`, `preview`, `paramSchema`, `limitations`, `requirements`, `qaStatus`, `templateVersion`, `sourceEpisode`.
+Catalog entries include: `id`, `category`, `purpose`, `tags`, `backend`, `backendCompatibility`, `sourcePath`, `preview`, `qaReportPath`, `sourceSha256`, `previewSha256`, `qaSha256`, `qaEvidence`, `paramSchema`, `limitations`, `requirements`, `qaStatus`, `templateVersion`, `sourceEpisode`.
 
-`reuseFrom` must identify an actual file and accepted QA record; otherwise mark `null`. Do not inflate reuse percentages by counting generic library imports as scene template reuse. Distinguish scene reuse and shared component usage.
+## Promote safely
 
-After a successful production, promote only genuinely repeatable scenes to `library/` after: remove episode-specific data, define safe inputs, reference screenshot/regression test, add explicit limitations, version, QA PASS, and update catalog. If extraction costs more than near-term reuse, preserve an example scene without building a generic renderer.
+```bash
+node <studio>/scripts/promote-scene.mjs <id> <scene-code> <preview> <qa-report> \
+  --backend <renderer> --version <n> --purpose "<visual intent>" --tags a,b
+```
 
-Cache keys include template/adapter version, scene parameters, source assets, fonts and material timing inputs. An untrusted cache is a MISS. Changes invalidate only dependent products.
+- Works on an empty library; creates parents/catalog idempotently.
+- Rejects non-PASS or contradictory QA, non-empty blockers/errors, id collisions, symlink escapes, source outside `projects/`, and unexpected file types.
+- Stages copies, hashes source/preview/QA, then atomically renames the scene directory and catalog. A failure never leaves a partial catalog entry.
+- The entry records backend compatibility (verified or explicitly unverified), template version, source episode and hashes. A promoted scene is a COPY/PATCH reference, not automatically a parameterized template.
+- Never overwrite an accepted id. Create a new version/id and keep old evidence.
+
+`reuseFrom` must identify an actual file and accepted QA record; otherwise `null`. Do not inflate reuse percentages by counting generic library imports as scene-template reuse. Distinguish scene reuse from shared-component usage.
+
+After a successful production, promote only genuinely repeatable scenes: remove episode-specific data, define safe inputs, reference a screenshot/regression check, add limitations, version, QA PASS and update the catalog. If extraction costs more than near-term reuse, keep an example scene instead of building a generic renderer.
+
+Cache keys include template/adapter version, parameters, source assets, fonts and material timing. An untrusted cache is a MISS. Changes invalidate only dependent products.

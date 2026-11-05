@@ -1,3 +1,5 @@
+> **Superseded (5 Nov 2026):** this report describes the earlier 0.4 narration gate. The current evidence-based G0, pronunciation contract, release/audio/metrics/worker hardening and their test results are in `IMPLEMENTATION_REVIEW_FIXES.md`. Kept as historical record.
+
 # Implementation report: narration-first writing system (V3)
 
 Status: implemented and tested in this checkout. No TTS was called and no video was rendered.

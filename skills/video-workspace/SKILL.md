@@ -1,18 +1,33 @@
 ---
 name: video-workspace
-description: Organize portable multi-series video workspaces, episode sources, reusable assets, generated outputs, caches, worker sandboxes and release files. Use when starting a project, resuming production, publishing a finished video or safely cleaning intermediates.
+description: Organize portable multi-series video workspaces, episode sources, reusable assets, caches, worker sandboxes and release files across an external data root. Use when starting, resuming, publishing or safely cleaning a production.
 ---
 
 # Workspace and provenance
 
-`AGENTS.md` owns standing instructions. Each project lives under `projects/<slug>/`, episode under `projects/<slug>/episodes/<episode-id>/`. Resolve these paths against the `Studio code` / `Studio data root` lines at the top of this skill, never against the session working directory; `scripts/studio-root.mjs` prints them as JSON.
+`AGENTS.md` owns standing instructions. Resolve `projects/`, `library/`, `.cache/` and `scripts/` against the `Studio code root` / `Studio data root` lines at the top of each skill, never the session working directory. `scripts/studio-root.mjs` prints them as JSON.
 
-Episode canonical files: `request.md`, `execution-brief.md`, `narration.md`, `claim-check.json`, `storyboard.json`, `timeline.json`, `scenes/`, `assets/original/`, `audio/manifest.json`, `qa/`, `reports/`, `exports/master.mp4`.
+## Roots and initialization
 
-Reusable catalog, templates, components and preview references live under `library/`; `library` is not an output dump. Narration style packages live in `library/styles/<id>/` (`style.json`, source reference, `notes.md`) and a project opts in with `project.json.styleRefs`; validate with `scripts/validate-style-refs.mjs <project-dir>`. Reference material stays in the library, never in `skills/` or the shipped bundle. Episode `work/` is scratch, globally shared `.cache/` is content-addressed; neither should be required to recreate accepted master if source+external dependencies are preserved.
+- **Code root** is the installed plugin (skills, scripts, kit, standing rules, built-in library payload). It may be read-only when installed from npm.
+- **Data root** is the user's production data. It defaults to the code root and can be set with `--data-root`, `VIDEO_STUDIO_ROOT`, or `studio.config.json`; one resolver is shared by the plugin and every CLI helper.
+- Initialize idempotently: `node <studio>/scripts/init-workspace.mjs [--data-root <dir>]`. It creates `projects/`, `library/`, `library/styles/`, `library/scenes/`, `library/templates/`, `.cache/`, a catalog and missing built-in style files. Existing files are never overwritten.
+- `new-episode.mjs` runs the same initialization, so an npm-installed plugin with an external data root starts cleanly. A project is `projects/<slug>/`; an episode is `projects/<slug>/episodes/<ep-id>/`.
 
-Do not mutate external originals or delete source/voice/accepted output. Retain exact versions and hashes for reproducibility. Never assume two files with the same filename are duplicates; compare hashes and dependents first.
+## Episode artifacts
 
-If user asks for another series, start a new project retaining existing shared `library/`. If asked to resume, read `report.json`, manifests, and QA, then rebuild only invalid stages. If moving paths, preserve compatibility and verify master hash.
+`production.json` (mode/risk), `request.md`, `execution-brief.md`, `throughline-map.json` + `narration.md` + `claim-check.json` + `narration-review.json` (narrated/mixed), `visual-brief.md` (silent/text-only), `storyboard.json`, `timeline.json`, `scenes/`, immutable `assets/original/`, `audio/segments.json` + `audio/manifest.json` + WAVs, `qa/`, `reports/`, `exports/master.*`, and `work/` scratch.
 
-Only promote a scene to shared library after reproducible QA pass, clear parameter schema and a reason for future reuse. Do not create a taxonomy so deep that every new episode needs a new directory type.
+Narration revisions use `scripts/revise-narration.mjs`; it writes `narration-revisions/` and marks downstream artifacts stale. Never hand-edit a frozen script and never delete a released master or accepted audio.
+
+Reusable catalog, templates, components and previews live under `library/`; it is not an output dump. Style packages are `library/styles/<id>/` with `style.json`, source reference (or `sourceBundled: false` + `externalSource`), and `notes.md`. A project opts in with `project.json.styleRefs`; validate with `scripts/validate-style-refs.mjs <project-dir>`. Reference material stays in the library, never in `skills/` or the installed bundle.
+
+## Modes and releases
+
+`narrated`/`mixed` require G0; `silent`/`text-only` intentionally have no narration and must not be given fake audio. Release with `scripts/validate-episode.mjs <episode> --release`; `--lint` is work-in-progress only. A new episode is `INCOMPLETE`, not delivered.
+
+## Reuse, resume and cleanup
+
+If the user asks for another series, create a new project and retain the shared `library/`. To resume, read `report.json`, manifests, review status and QA, then rebuild only invalid stages. Prefix an accepted master before re-rendering; never overwrite without versioning. Episode `work/` is scratch; `.cache/` is content-addressed. Neither should be required to recreate an accepted master if sources and external dependencies remain. Do not mutate external originals or delete source/voice/accepted output. Compare hashes and dependents, never just filenames.
+
+Only promote a scene after reproducible QA, a clear parameter schema and a future-reuse reason. Avoid a taxonomy so deep that every new episode needs a new directory type.

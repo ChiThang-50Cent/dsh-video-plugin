@@ -24,3 +24,11 @@ P5: metrics and scene promotion after acceptance; only expand orchestration when
 ## Target metrics, not promises
 
 Measure `T_total`, model-active time, T_narration, T_custom, T_QA, T_render, clips reused, % A/B scenes, code line diff, visual inspections, number of workbench cycles, per-worker idle and active time, full renders, TTS cache hit count. Do not claim a 2x speedup without matching full-episode evidence. Measure quality as hard-gate pass and a separate narrative editor score, not just more screenshots.
+
+
+## 0.5 remediation: what changed from these observations
+
+- Narration is now an evidence-based gate with a mechanical/editorial split, a through-line map, claim locations and an independent review for high-risk work. Schema-only PASS labels no longer unlock audio.
+- The `spokenText` pronunciation path preserves the approved numbers/operators/signs; an intentional revision archives the old script and invalidates segments instead of silently keeping stale audio.
+- Workspace roots, built-in styles, scene promotion, audio preflight and release checks are deterministic and test-covered. Metrics are collected from DSH session logs rather than manually estimated.
+- Worker count observations are still respected: the default cap stays at two, and depth is reported separately from concurrency. Scene QA remains code-first, not one reviewer per worker.

@@ -6,10 +6,15 @@
  * registered body carries the resolved studio roots, because a session opened
  * in another workspace must not resolve `projects/`, `library/` or `scripts/`
  * against its own working directory.
+ *
+ * `scripts/studio-paths.mjs` owns root resolution for the plugin and every CLI
+ * helper. The plugin adds the configurable `dataRoot` row value to that one
+ * resolver instead of reimplementing path logic here.
  */
 import { readFile, readdir } from 'node:fs/promises'
-import { dirname, join, resolve } from 'node:path'
+import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { resolveDataRoot, resolveStudioPaths } from './scripts/studio-paths.mjs'
 
 export const name = 'video-studio'
 
@@ -19,16 +24,17 @@ export const inject = ['skills']
 const packageRoot = dirname(fileURLToPath(import.meta.url))
 
 /**
- * Resolve the studio data root: explicit config, then `VIDEO_STUDIO_ROOT`,
- * then this package's directory.
- * @param {unknown} configured - `dataRoot` from the plugin row.
+ * Resolve the studio data root with the shared resolver.
+ * @param {unknown} [configured] - optional `dataRoot` from the plugin row.
+ * @param {{ env?: NodeJS.ProcessEnv }} [options]
  * @returns {string} absolute data root.
  */
-export function dataRootOf(configured) {
-  const value = typeof configured === 'string' && configured.length > 0
-    ? configured
-    : process.env.VIDEO_STUDIO_ROOT
-  return typeof value === 'string' && value.length > 0 ? resolve(packageRoot, value) : packageRoot
+export function dataRootOf(configured, options = {}) {
+  return resolveDataRoot({
+    dataRoot: typeof configured === 'string' ? configured : undefined,
+    codeRoot: packageRoot,
+    env: options.env ?? process.env,
+  }).dataRoot
 }
 
 /**
@@ -63,20 +69,25 @@ export function parseFrontmatter(text) {
 
 /**
  * Describe where the studio code and outputs live, and the standing rules.
- * @param {string} dataRoot - resolved output root.
+ * @param {string} dataRoot - resolved data root.
+ * @param {string} [root] - package/code root.
  * @returns {string} markdown quote block prepended to every skill body.
  */
-export function studioHeader(dataRoot) {
-  const same = dataRoot === packageRoot
-  const roots = same
-    ? `Studio root (code and output data): \`${packageRoot}\``
-    : `Studio code: \`${packageRoot}\`\n> Studio data root (projects, library, cache): \`${dataRoot}\``
+export function studioHeader(dataRoot, root = packageRoot) {
+  const code = resolveStudioPaths(dataRoot, root).codeRoot
+  const same = dataRoot === code
+  const lines = same
+    ? [`Studio root: \`${code}\` (code, projects, library, cache)`]
+    : [
+      `Studio code root: \`${code}\``,
+      `Studio data root: \`${dataRoot}\` (projects, library, cache)`,
+    ]
   return [
-    `> ${roots.replaceAll('\n', '\n> ')}`,
-    `> Standing rules: \`${join(packageRoot, 'AGENTS.md')}\` — read it before the first production action.`,
-    '> Resolve every `projects/`, `library/`, `scripts/` and `.cache/` path against these roots, never against the session working directory.',
-    '> `node <studio code>/scripts/studio-root.mjs` prints the same roots as JSON.',
-  ].join('\n')
+    ...lines,
+    `Standing rules: \`${join(code, 'AGENTS.md')}\` — read it before the first production action.`,
+    'Resolve every `projects/`, `library/`, `scripts/` and `.cache/` path against these roots, never against the session working directory.',
+    `\`node ${join(code, 'scripts', 'studio-root.mjs')}\` prints the same roots as JSON.`,
+  ].map((line) => `> ${line}`).join('\n')
 }
 
 /**
@@ -85,9 +96,14 @@ export function studioHeader(dataRoot) {
  * @param {{ dataRoot?: string } | undefined} config - row config.
  */
 export async function apply(ctx, config) {
-  const dataRoot = dataRootOf(config?.dataRoot)
+  const resolution = resolveDataRoot({
+    dataRoot: typeof config?.dataRoot === 'string' ? config.dataRoot : undefined,
+    codeRoot: packageRoot,
+  })
+  const dataRoot = resolution.dataRoot
+  for (const warning of resolution.warnings ?? []) ctx.logger?.warn(`video-studio: ${warning}`)
   const skillsDir = join(packageRoot, 'skills')
-  const header = studioHeader(dataRoot)
+  const header = studioHeader(dataRoot, packageRoot)
   let entries
   try {
     entries = await readdir(skillsDir, { withFileTypes: true })

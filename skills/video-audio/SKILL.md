@@ -1,52 +1,85 @@
 ---
 name: video-audio
-description: Segment frozen narration, synthesize speech, time and mix audio in video production. Use after narration passes G0, and when a video needs voice-over, music, sound effects or synchronization to spoken language.
+description: Segment frozen narration, verify the speech provider/device with a sample, synthesize and time audio with bounded jobs and a meaning-preserving pronunciation contract. Use after narration passes G0.
 ---
 
 # Audio and speech
 
-The audio step consumes a frozen script. It never improves, shortens, or paraphrases the narration.
+The audio step consumes a frozen script. It never improves, shortens, paraphrases or re-voices the approved meaning.
 
 ## Preconditions
 
-- `narration-review.json` is `status: "pass"` with empty `blockers`, and its `narrationSha256` matches `narration.md`.
-- `node <studio>/scripts/validate-narration.mjs <episode-dir>` passes. Re-run it with `--segments audio/segments.json` after writing the segment manifest.
-- If the review is missing, stale, or blocked, stop and return the blocker to the producer. Do not synthesize a draft.
+- `narration-review.json` is `status: "pass"` with empty `blockers`, all blocking findings resolved, and its `narrationSha256` matches `narration.md`.
+- `node <studio>/scripts/validate-narration.mjs <episode-dir>` passes. Re-run with `--segments audio/segments.json --require-segments` after writing the manifest.
+- If the review is missing, stale or blocked, stop and return the blocker. Do not synthesize a draft.
+- `silent`/`text-only` productions have no voice-over; do not fabricate narration. Validate music/SFX and visual timing instead.
+
+## Preflight the actual backend
+
+Before batch synthesis, run:
+
+```bash
+node <studio>/scripts/audio-preflight.mjs --provider <id> --voice <id> \
+  --voice-reference <wav> --synthesize-sample [--require-gpu] [--json]
+```
+
+- `nvidia-smi` proves hardware, not that the TTS provider uses it. Provider/device readiness is verified by the configured device probe **and** a short sample. If `--require-gpu` cannot be verified, stop; never silently run CPU for a long batch.
+- Inspect the voice reference for readability, duration, sample rate, silence and clipping. Language/timbre suitability still needs listening.
+- Run TTS/ASR through bounded jobs with a timeout and explicit retry policy (`scripts/lib/bounded.mjs`). Do not retry forever or hide a failure.
+- Record provider, command/version, device, voice/model, settings, sample path/result and environment in `audio/manifest.json`.
 
 ## Segment without rewriting
 
-Create `audio/segments.json` from the frozen prose. Split at paragraph or sentence boundaries that the chosen engine can synthesize naturally; there is no universal word count and no "one scene = one chunk".
+Create `audio/segments.json` at sentence/paragraph boundaries the engine handles naturally. There is no universal word count and no "one scene = one chunk".
 
 ```json
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "narrationSha256": "<hash of the frozen narration.md>",
-  "segments": [
-    {
-      "id": "seg-001",
-      "paragraph": 1,
-      "text": "exact prose from narration.md",
-      "spokenText": "only when pronunciation differs",
-      "audio": "narration/seg-001.wav"
-    }
-  ]
+  "segments": [{
+    "id": "seg-001",
+    "paragraphStart": 1,
+    "text": "exact prose from narration.md",
+    "displayText": "optional; must equal text",
+    "spokenText": "optional; only if pronunciation differs",
+    "pronunciation": {
+      "version": 1,
+      "overrides": [{
+        "from": "16", "to": "mười sáu", "kind": "number",
+        "provenance": "Vietnamese number reading table",
+        "justification": "The approved value stays 16; the engine reads digits inconsistently.",
+        "risk": "low"
+      }]
+    },
+    "audio": "narration/seg-001.wav"
+  }]
 }
 ```
 
-Rules:
+Contract:
 
-- `text` is copied from the spoken prose, not retyped. The normalized concatenation of every `text`, in order, must equal the spoken prose extracted from `narration.md` — no dropped, duplicated, reordered, or paraphrased sentences.
-- `spokenText` is only pronunciation normalization for symbols, abbreviations, numbers and units. It may not change meaning or add words the listener did not approve.
-- Subtitles and display transcripts derive from `text` (canonical wording), not `spokenText`.
-- Run the validator with `--segments`; a coverage or hash failure blocks synthesis.
-- If the script must change, stop: the producer reopens narration, redoes G0, and only then re-segments.
+- `text` is copied from spoken prose, not retyped. Normalized concatenation of every `text` in order must equal the frozen spoken prose exactly.
+- `displayText` is the on-screen wording and must equal `text`; subtitles use it, never `spokenText`.
+- `spokenText` may differ only through declared `pronunciation.overrides`. Every override needs `from`, `to`, `kind`, `provenance`, `justification`, and `risk`. The tool reconstructs `spokenText` from the overrides; an undeclared change fails.
+- An override may normalize pronunciation (`16` → "mười sáu", `%` → "phần trăm", an abbreviation), but may **never** change numbers, operators, signs, quantities or a mathematical claim. `trừ` → `cộng`, `âm` → `dương`, a changed number or an omitted quantity fails the gate even if marked reviewed. Ambiguous but meaning-preserving readings need `reviewed`, `reviewedBy` and a resolved `reviewRef`.
+- If the script must change, stop. Use `scripts/revise-narration.mjs`; it blocks the review and moves the old segment manifest aside. Never keep old audio for a new hash.
 
-## Synthesis and cache
+## Targeted audio QA
 
-1. Inventory actual TTS providers or existing recorded audio. Ask for a voice or use the configured project default. No assumed OmniVoice/CUDA/hardware. Preserve source files and rights metadata.
-2. Preflight the chosen engine/model, required runtime, GPU memory when requested, language and output codec. If policy demands GPU and GPU fails, stop; never silently run CPU for tens of minutes.
-3. Synthesize or modify only changed segments. Fingerprint normalized `spokenText`, voice, model/version, seed when meaningful, language, and parameters. Unchanged segments reuse their WAVs; failed chunks are not cached.
-4. Verify sample rate, channels, peak levels, audible samples, clipping, long silence, and numeric speech pronunciation. `ffprobe` can measure media; an unknown engine must be reported as unknown.
-5. Measure every WAV in seconds and build `timeline.json` from measured durations plus intentionally authored pauses/transitions. Word-count estimates are planning-only and never override measured audio.
-6. Music and SFX require attribution/license and suitable loudness relative to the voice; no copyrighted media without authorization. Keep separate stems for future remixes.
-7. Output `audio/manifest.json` with segment IDs, engine identity, fingerprints, WAV paths, hashes and durations, plus subtitles/cue timings and a QA summary. Do not regenerate unchanged audio during scene or layout edits.
+Before/with synthesis:
+
+```bash
+node <studio>/scripts/qa-audio.mjs <episode-dir> --segments audio/segments.json [--audio] [--json]
+```
+
+- Deterministically check that every number/operator in `text` is still present in the spoken form; flag potential omissions and digits left for the engine to read.
+- After WAVs exist, `--audio` checks readability, duration, silence and clipping. Optional ASR (`--asr-command`, `--asr-arg` with `{audio}`) is advisory evidence, not truth.
+- Listen to the sample and targeted segments containing numbers, operators, names and ambiguous units; automated checks cannot hear a wrong tone.
+
+## Synthesis, cache and timeline
+
+1. Synthesize or modify only changed segments. Fingerprint normalized `spokenText`, voice, model/version, seed when meaningful, language and parameters. Successful unchanged chunks reuse their WAVs; failed chunks are never cached.
+2. Verify sample rate, channels, peak levels, audible samples, clipping, long silence and numeric speech pronunciation. Unknown engines are reported as unknown.
+3. Measure every WAV in seconds and build `timeline.json` from measured durations plus authored pauses/transitions. Word-count estimates are planning-only.
+4. Music/SFX need attribution/license and suitable loudness; keep separate stems. No copyrighted media without authorization.
+5. Output `audio/manifest.json` with `narrationSha256`, segment IDs, engine identity, fingerprints, paths, hashes, measured durations, subtitle cues, QA summary and any `stale` marker. Release rejects a manifest that cannot bind the audio to the frozen script. Do not regenerate unchanged audio during scene or layout edits.

@@ -1,27 +1,255 @@
 /**
- * Where the portable video studio keeps its code and its output data.
+ * One resolver for the two studio roots.
  *
- * `codeRoot` holds skills, scripts, kit contracts and standing rules.
- * `dataRoot` holds `projects/`, `library/` and `.cache/`; it defaults to the
- * package directory and can be redirected with `VIDEO_STUDIO_ROOT` so videos
- * can live outside the plugin checkout.
+ * `codeRoot` is the installed plugin package: skills, scripts, kit contracts,
+ * standing rules and the built-in library payload. It is read-only in an npm
+ * install and must never be used for user output.
+ *
+ * `dataRoot` is the user's production workspace: `projects/`, `library/` and
+ * `.cache/`. It defaults to `codeRoot` (source checkout) and can be moved to
+ * another disk or directory. Every helper and the DSH plugin resolve it with
+ * this module so a CLI run and the runtime agree.
+ *
+ * Precedence (first non-empty wins):
+ *   1. explicit option / plugin row `dataRoot` (relative to `codeRoot`)
+ *   2. `VIDEO_STUDIO_ROOT` environment variable (relative to cwd)
+ *   3. `studio.config.json` beside this package (relative to its directory)
+ *   4. `codeRoot`
  */
+import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-/** Directory holding this package. */
+/** Directory holding this package (plugin code). */
 export const codeRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 
-/** Directory holding projects, library and cache. */
-export const dataRoot = path.resolve(process.env.VIDEO_STUDIO_ROOT || codeRoot)
+/** Optional config file beside the package. */
+export const CONFIG_FILE_NAME = 'studio.config.json'
 
-export const paths = {
-  codeRoot,
-  dataRoot,
-  projects: path.join(dataRoot, 'projects'),
-  library: path.join(dataRoot, 'library'),
-  cache: path.join(dataRoot, '.cache'),
-  kit: path.join(codeRoot, 'kit'),
-  skills: path.join(codeRoot, 'skills'),
-  scripts: path.join(codeRoot, 'scripts'),
+function nonEmpty(value) {
+  return typeof value === 'string' && value.trim().length > 0
+}
+
+function absoluteAgainst(base, value) {
+  return path.isAbsolute(value) ? path.resolve(value) : path.resolve(base, value)
+}
+
+/**
+ * Read the optional `studio.config.json`.
+ * @param {{ codeRoot?: string, env?: NodeJS.ProcessEnv }} [options]
+ * @returns {{ path?: string, dataRoot?: string, source: string, error?: string }}
+ */
+export function readStudioConfigFile(options = {}) {
+  const root = options.codeRoot ?? codeRoot
+  const env = options.env ?? process.env
+  const file = nonEmpty(env.VIDEO_STUDIO_CONFIG)
+    ? absoluteAgainst(process.cwd(), env.VIDEO_STUDIO_CONFIG)
+    : path.join(root, CONFIG_FILE_NAME)
+  if (!fs.existsSync(file)) return { source: 'none' }
+  let parsed
+  try {
+    parsed = JSON.parse(fs.readFileSync(file, 'utf8'))
+  } catch (error) {
+    return { path: file, source: 'config', error: `${file}: ${error.message}` }
+  }
+  if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    return { path: file, source: 'config', error: `${file}: expected a JSON object` }
+  }
+  if (parsed.dataRoot !== undefined && !nonEmpty(parsed.dataRoot)) {
+    return { path: file, source: 'config', error: `${file}: dataRoot must be a non-empty string` }
+  }
+  return {
+    path: file,
+    source: 'config',
+    ...(nonEmpty(parsed.dataRoot) ? { dataRoot: absoluteAgainst(path.dirname(file), parsed.dataRoot) } : {}),
+  }
+}
+
+/**
+ * Resolve the production data root without touching the filesystem.
+ * @param {{
+ *   dataRoot?: unknown,
+ *   codeRoot?: string,
+ *   env?: NodeJS.ProcessEnv,
+ *   cwd?: string,
+ *   configFile?: { dataRoot?: string, error?: string, path?: string }
+ * }} [options]
+ * @returns {{ dataRoot: string, source: string, codeRoot: string, configPath?: string, warnings: string[] }}
+ */
+export function resolveDataRoot(options = {}) {
+  const root = options.codeRoot ?? codeRoot
+  const env = options.env ?? process.env
+  const cwd = options.cwd ?? process.cwd()
+  const warnings = []
+  const config = options.configFile ?? readStudioConfigFile({ codeRoot: root, env })
+  if (config.error !== undefined) warnings.push(config.error)
+
+  if (nonEmpty(options.dataRoot)) {
+    return {
+      dataRoot: absoluteAgainst(root, options.dataRoot),
+      source: 'explicit',
+      codeRoot: root,
+      ...(config.path === undefined ? {} : { configPath: config.path }),
+      warnings,
+    }
+  }
+  if (nonEmpty(env.VIDEO_STUDIO_ROOT)) {
+    return {
+      dataRoot: absoluteAgainst(cwd, env.VIDEO_STUDIO_ROOT),
+      source: 'env',
+      codeRoot: root,
+      ...(config.path === undefined ? {} : { configPath: config.path }),
+      warnings,
+    }
+  }
+  if (nonEmpty(config.dataRoot)) {
+    return {
+      dataRoot: path.resolve(config.dataRoot),
+      source: 'config',
+      codeRoot: root,
+      ...(config.path === undefined ? {} : { configPath: config.path }),
+      warnings,
+    }
+  }
+  return {
+    dataRoot: root,
+    source: 'package',
+    codeRoot: root,
+    ...(config.path === undefined ? {} : { configPath: config.path }),
+    warnings,
+  }
+}
+
+/**
+ * Paths for one data root.
+ * @param {string} dataRoot
+ * @param {string} [root]
+ */
+export function resolveStudioPaths(dataRoot, root = codeRoot) {
+  const data = path.resolve(dataRoot)
+  const code = path.resolve(root)
+  return {
+    codeRoot: code,
+    dataRoot: data,
+    projects: path.join(data, 'projects'),
+    library: path.join(data, 'library'),
+    cache: path.join(data, '.cache'),
+    kit: path.join(code, 'kit'),
+    skills: path.join(code, 'skills'),
+    scripts: path.join(code, 'scripts'),
+    rules: path.join(code, 'AGENTS.md'),
+    builtinLibrary: path.join(code, 'library'),
+  }
+}
+
+const resolved = resolveDataRoot()
+
+/** Directory holding projects, library and cache for this process. */
+export const dataRoot = resolved.dataRoot
+/** Resolution metadata (source, config path, warnings). */
+export const rootResolution = resolved
+/** Effective paths for this process. */
+export const paths = resolveStudioPaths(dataRoot)
+
+const LIBRARY_DIRS = ['scenes', 'templates', 'styles']
+
+function copyMissing(source, destination) {
+  if (!fs.existsSync(source)) return []
+  const copied = []
+  if (fs.statSync(source).isFile()) {
+    if (!fs.existsSync(destination)) {
+      fs.mkdirSync(path.dirname(destination), { recursive: true })
+      fs.copyFileSync(source, destination)
+      copied.push(destination)
+    }
+    return copied
+  }
+  if (!fs.statSync(source).isDirectory()) return []
+  for (const entry of fs.readdirSync(source, { withFileTypes: true })) {
+    const from = path.join(source, entry.name)
+    const to = path.join(destination, entry.name)
+    if (entry.isDirectory()) {
+      fs.mkdirSync(to, { recursive: true })
+      copied.push(...copyMissing(from, to))
+    } else if (entry.isFile() && !fs.existsSync(to)) {
+      fs.mkdirSync(path.dirname(to), { recursive: true })
+      fs.copyFileSync(from, to)
+      copied.push(to)
+    }
+  }
+  return copied
+}
+
+/**
+ * Idempotently create the workspace and overlay the built-in library.
+ *
+ * Missing files are copied from the installed package; existing files are never
+ * overwritten. A separate data root therefore receives the built-in style
+ * packages even when the plugin was installed from an npm tarball.
+ * @param {{ dataRoot?: string, codeRoot?: string, withBuiltins?: boolean }} [options]
+ */
+export function ensureWorkspace(options = {}) {
+  const data = path.resolve(options.dataRoot ?? dataRoot)
+  const code = path.resolve(options.codeRoot ?? codeRoot)
+  const created = []
+  const copiedFiles = []
+  for (const dir of ['projects', 'library', '.cache']) {
+    const absolute = path.join(data, dir)
+    if (!fs.existsSync(absolute)) created.push(absolute)
+    fs.mkdirSync(absolute, { recursive: true })
+  }
+  for (const dir of LIBRARY_DIRS) {
+    const absolute = path.join(data, 'library', dir)
+    if (!fs.existsSync(absolute)) created.push(absolute)
+    fs.mkdirSync(absolute, { recursive: true })
+  }
+
+  const builtin = path.join(code, 'library')
+  const withBuiltins = options.withBuiltins ?? true
+  if (withBuiltins && data !== code && fs.existsSync(builtin)) {
+    // Copy style packages, but never copy a catalog whose scene/template files
+    // were not copied: that would leave entries pointing at missing files.
+    const styles = path.join(builtin, 'styles')
+    copiedFiles.push(...copyMissing(styles, path.join(data, 'library', 'styles')))
+  }
+
+  const catalog = path.join(data, 'library', 'catalog.json')
+  if (!fs.existsSync(catalog)) {
+    const builtinCatalog = path.join(builtin, 'catalog.json')
+    let copiedCatalog = false
+    if (withBuiltins && data !== code && fs.existsSync(builtinCatalog)) {
+      try {
+        const parsed = JSON.parse(fs.readFileSync(builtinCatalog, 'utf8'))
+        if (parsed !== null && typeof parsed === 'object' && Array.isArray(parsed.entries) && parsed.entries.length === 0) {
+          fs.copyFileSync(builtinCatalog, catalog)
+          copiedFiles.push(catalog)
+          copiedCatalog = true
+        }
+      } catch {
+        // Fall through to a clean catalog; a broken built-in catalog must not
+        // block workspace initialization.
+      }
+    }
+    if (!copiedCatalog) {
+      fs.writeFileSync(catalog, `${JSON.stringify({ schemaVersion: 1, entries: [] }, null, 2)}\n`)
+      created.push(catalog)
+    }
+  } else {
+    try {
+      const parsed = JSON.parse(fs.readFileSync(catalog, 'utf8'))
+      if (parsed === null || typeof parsed !== 'object' || !Array.isArray(parsed.entries)) {
+        throw new Error('entries must be an array')
+      }
+    } catch (error) {
+      throw new Error(`library catalog is not valid JSON with an entries array: ${catalog}: ${error.message}`)
+    }
+  }
+
+  return {
+    dataRoot: data,
+    codeRoot: code,
+    created: [...new Set(created)],
+    copiedFiles,
+    paths: resolveStudioPaths(data, code),
+  }
 }

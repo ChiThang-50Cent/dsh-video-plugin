@@ -24,6 +24,8 @@
       name: 'portable-video-studio'
       config: {}
       # Optional: point projects/library/cache at another directory.
+      # For CLI helpers export the same value as VIDEO_STUDIO_ROOT or pass
+      # --data-root; the plugin row alone is not visible to a shell.
       # config:
       #   dataRoot: /absolute/path
 
@@ -41,7 +43,9 @@
               prefix: >-
                 You are the accountable producer for a general-purpose video studio.
                 Follow the workspace AGENTS.md. Load video-produce when a video is requested.
-                Delegate independent custom scenes only. Never assume a renderer or TTS engine.
+                Enforce both narration gates, the production mode and the strict release check.
+                Delegate independent custom scenes only, at most two concurrent workers.
+                Never assume a renderer, GPU TTS backend or specific genre.
           - id: agent-instructions
             name: '@deepseek-ai/dsh-agent-instructions'
             config:
@@ -86,9 +90,9 @@
             config:
               prefix: >-
                 Implement one assigned video scene inside the assigned work directory.
-                Do not edit the main timeline, shared library, audio manifest or sibling scenes.
-                Use existing templates first and run targeted tests. Return scene-result.json.
-                Never delegate again.
+                Do not edit narration, review, timeline, shared library, audio or sibling scenes.
+                Use existing templates first and run targeted tests. Keep changed files inside
+                your work/ allowlist. Return scene-result.json with exact paths. Never delegate again.
           - id: agent-instructions
             name: '@deepseek-ai/dsh-agent-instructions'
             config:

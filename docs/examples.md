@@ -4,83 +4,75 @@
 
 ```text
 /video-produce
-Make a real 10-minute Vietnamese episode based on the provided math-book pages.
-Use the book as source material; create an original listener-first narration.
-Write the full spoken script, verify every mathematical claim, then synthesize
-speech and generate timeline based on actual WAV durations.
-Reuse accepted scene templates before writing new code. At most two C-scene
-workers. Apply risk-based QA and deliver an MP4 plus production metrics.
+Make a 10-minute Vietnamese episode from the supplied math-book pages. Use the book as
+source; write an original through-line map and continuous narration. Audit every claim
+with a real narration location, run an independent review, and freeze only after G0.
+Use accepted templates before new code, at most two scene workers, verified audio
+preflight and a real narrated 1080p MP4. If a source/backend is missing, name it.
 ```
 
-## Narration-first lesson with an explicit review gate
+The producer builds `throughline-map.json`, drafts prose, writes claim-check v2 and narration-review v2 with cited evidence, and runs `validate-narration.mjs`. A blocked review names the claim and correction instead of starting TTS.
 
-```text
-/video-produce
-Make a Vietnamese explainer about why multiplying two negative numbers gives a positive.
-Use the source I supplied. Make it conversational and insightful, like the example
-indeterminate-forms script. Draft first; do not synthesize speech until the narration
-passes review.
-```
-
-The producer drafts `narration.md`, audits claims into `claim-check.json`, runs one editorial pass, writes `narration-review.json` with the file hash, and runs `scripts/validate-narration.mjs`. If the review blocks, the answer names the claim and the correction instead of starting TTS.
-
-## Lesson that follows a stored style reference
-
-```text
-/video-produce
-Use the `indeterminate-forms` style package for a Vietnamese explainer on why a
-negative times a negative is positive. Follow its architecture (familiar example,
-one central metaphor, bridges, full example arc, warning, synthesis ending), not its
-wording or outline. Keep the lesson short; run G0 before any speech.
-```
-
-The producer reads `library/styles/indeterminate-forms/notes.md`, records the constraints in `execution-brief.md`, and writes original prose. The package's audit reminds it to state any one-sided limit explicitly.
-
-## Narration review only, no production
+## Narration review only
 
 ```text
 /video-narration
-Review the narration in projects/<series>/episodes/ep-001 against the studio G0 rubric.
-Check the two-sided/one-sided limit statements, the transitions, and whether a listener
-can follow without the screen. Write narration-review.json and report blockers; do not
-run TTS or touch scenes.
+Review episode 001 against the G0 rubric. Check the one-sided/two-sided limit claims,
+the through-line, the identity transitions and whether a listener can follow without
+the screen. Write schema-v2 evidence and findings. Do not run TTS or touch scenes.
 ```
 
-## History documentary with archival footage
+## High-risk independent review
+
+```text
+/video-narration
+The episode makes medical claims and is marked qualitySensitive. Run the deterministic
+editorial pre-scan, then use one independent fresh-context review of the full script,
+brief and sources. Return only actionable findings with exact excerpts and resolutions.
+Do not write scenes, synthesize audio or render.
+```
+
+## Silent launch short
 
 ```text
 /video-produce
-Create an 8-minute documentary about an event described in the supplied sources.
-Prefer archival images/footage I have licensed. Explain source uncertainty in
-narration; use captions, maps and timelines. Do not invent archival footage or
-choose fake historic dates. Use FFmpeg/editing backend if available.
+Create a 35-second vertical launch video from assets/original. No voice-over; mode silent.
+Energetic typography, brand style, licensed music. Produce a real master, poster,
+captions if text appears, media QA and the strict release status. Do not create fake narration.
 ```
 
-## Product launch short, not a mathematical video
+## Documentary with source uncertainty
 
 ```text
 /video-produce
-Create a 35-second vertical (1080x1920) launch video from the assets in
-assets/original. Energetic typography, no spoken narration. Use the brand
-style. Reuse the vertical intro/feature/CTA templates. Produce master MP4,
-poster, and captions if any speech is present.
+Create an 8-minute documentary from the supplied sources. Attribute contested claims and
+distinguish record from inference. Use licensed archival footage, maps and timelines.
+Explain uncertainty in the narration; do not invent footage, dates or quotes.
 ```
 
-## Draft-only from conversation
+## Revision after a blocked review
 
 ```text
-/video-produce
-I want a series about simple science demonstrations for ages 12-15.
-Start with episode 1 on buoyancy. Design the series style and a proposed
-narration-first episode, but stop before TTS, rendering, installations,
-paid APIs, or other external actions. Identify any essential missing assets.
+/video-narration
+The limit paragraph was corrected. Use revise-narration with the reason, recheck the
+affected claims and through-line, update the review evidence/hash, and report which
+audio/timeline artifacts are now stale. Do not synthesize.
 ```
 
 ## QA an existing video only
 
 ```text
 /video-qa
-Review exports/master.mp4 and the available storyboard/timeline.
-Check streams, dimensions, audio/silence, subtitle ordering, transition
-issues and selected risky frames. Do not regenerate the whole video.
+Review exports/master.mp4 and the available QA. Run metadata QA plus targeted --quality
+and subtitle checks. Verify qa/media.json binds to the current master. Do not regenerate.
+```
+
+## Metrics only
+
+```text
+/video-qa
+Collect measured metrics from the DSH session logs for the main session and its scene
+workers. Report wall clock, tool execution, overlap, model latency, tokens/cache,
+retries, failed jobs, image reads, worker concurrency and delegation depth separately.
+Do not estimate missing values.
 ```

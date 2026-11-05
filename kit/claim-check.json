@@ -1,0 +1,24 @@
+{
+  "schemaVersion": 2,
+  "status": "PENDING",
+  "reviewedAt": null,
+  "coverage": {
+    "claimsExpected": true,
+    "justification": null
+  },
+  "claims": [
+    {
+      "id": "c01",
+      "claim": "Example claim text; replace it and attach real evidence.",
+      "source": "source page/URL or derivation",
+      "verified": false,
+      "risk": "low",
+      "location": {
+        "sectionRef": { "sectionId": "preamble" },
+        "paragraph": 1,
+        "excerpt": "exact excerpt from narration.md"
+      }
+    }
+  ],
+  "conditions": []
+}
