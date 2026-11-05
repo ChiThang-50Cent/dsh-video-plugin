@@ -9,7 +9,7 @@
   "description": "The user's positive writing reference: a long Vietnamese lecture on the indeterminate forms 0/0 and infinity/infinity.",
   "source": "reference.vi.md",
   "notes": "notes.md",
-  "rights": "User-provided reference for this workspace. Do not redistribute it outside the workspace or embed it in the installed skill.",
+  "rights": "User-provided reference. The repository owner confirmed permission to publish it in this public repository; do not redistribute it further or embed it in an installed skill.",
   "useAs": "rhetorical architecture, voice and pacing",
   "doNotUseAs": "factual source, wording to copy, or a scope template"
 }

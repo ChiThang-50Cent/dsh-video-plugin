@@ -36,7 +36,7 @@ The user's long indeterminate-forms transcript was **not present when the first 
 | `tests/fixtures/narration-limit-bad.md` | New engaging-but-false two-sided limit script. |
 | `tests/fixtures/narration-fragments.md` | New scene-caption anti-pattern. |
 | `library/styles/indeterminate-forms/style.json` | New. Metadata, language, rights, source and notes pointers for the user-provided style reference. |
-| `library/styles/indeterminate-forms/reference.vi.md` | New. The user-provided transcript, stored verbatim in the workspace library. Not in package `files`; rights note forbids embedding/redistribution. |
+| `library/styles/indeterminate-forms/reference.vi.md` | New. The user-provided transcript, stored verbatim in the workspace library. Not in package `files`; published in this repository with the owner's confirmed permission and never embedded in the installed skill. |
 | `library/styles/indeterminate-forms/notes.md` | New. Derived style guidance and a mathematical audit; the reusable extract. |
 | `library/styles/README.md` | New. Style-package convention, `styleRefs`, rights and validation. |
 | `scripts/validate-style-refs.mjs` | New. Validates a project's `styleRefs` against `library/styles/<id>/`. |
@@ -134,7 +134,7 @@ Other audited claims (factorization, conjugation, degree rule, `ln x / x`, `x^2 
 - The validator's spoken-prose extraction is convention-based: display math must live in fenced blocks; headings, blockquotes and fenced blocks are not spoken. A writer who puts spoken text in a quote block loses it from the comparison.
 - `claim-check.json` cannot prove a source exists. It records verification; a fabricated citation still needs human or retrieval checks.
 - No TTS, scene worker or render ran, by instruction. No full film was produced, so no production timing comparison is claimed.
-- The indeterminate-forms transcript is user-provided workspace material. It is stored with a rights note and excluded from the package `files`; it must not be redistributed or embedded in a skill without permission. Its math audit is human-reviewed, not machine-proved.
+- The indeterminate-forms transcript is user-provided material. The repository owner confirmed permission to publish it in this public repository; it remains excluded from the package `files` and is not embedded in a skill. Further redistribution needs permission. Its math audit is human-reviewed, not machine-proved.
 - Git was not used; the repository is a plain checkout, so no commit was produced.
 
 ## 9. How to use
