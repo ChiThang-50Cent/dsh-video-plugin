@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Video studio presets",
+    "description": "Adds the Video Producer and Video Scene Worker agent presets for reusable, backend-agnostic video production."
+  }
+}

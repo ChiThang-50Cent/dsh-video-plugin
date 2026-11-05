@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "id": "s01-hook",
+  "kind": "title",
+  "durationSec": 5,
+  "renderer": "auto",
+  "reuseClass": "A",
+  "reuseFrom": null,
+  "templateId": "title-card-v1",
+  "visualGoal": "Present core question",
+  "beatIds": [
+    "b01"
+  ],
+  "assets": [],
+  "keyframes": [
+    0,
+    2.5,
+    4.7
+  ],
+  "qaRisk": "normal"
+}

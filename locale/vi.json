@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Bộ preset xưởng video",
+    "description": "Thêm hai preset Video Producer và Video Scene Worker cho quy trình sản xuất video dùng lại được, không phụ thuộc renderer."
+  }
+}

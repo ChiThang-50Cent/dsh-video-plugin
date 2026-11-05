@@ -1,0 +1,11 @@
+{
+  "schemaVersion": 1,
+  "name": "Untitled series",
+  "slug": "example-series",
+  "style": "../../library/styles/default.json",
+  "episodesDir": "episodes",
+  "renderer": "auto",
+  "tts": "auto",
+  "sourcePolicy": "original-or-attributed",
+  "styleRefs": []
+}

@@ -1,0 +1,10 @@
+{
+  "sceneId": "s01-hook",
+  "status": "PASS",
+  "codePaths": [],
+  "previewPaths": [],
+  "qaReportPath": null,
+  "backendVersion": null,
+  "changedFiles": [],
+  "notes": "Example only; do not use as a PASS without evidence."
+}

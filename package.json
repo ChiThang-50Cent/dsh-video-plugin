@@ -1,0 +1,41 @@
+{
+  "name": "portable-video-studio",
+  "version": "0.4.0",
+  "private": true,
+  "type": "module",
+  "description": "DSH bundle adding the Video Producer and Video Scene Worker agent presets plus studio skills that work from any workspace.",
+  "exports": {
+    ".": "./index.js",
+    "./locale/*.json": "./locale/*.json",
+    "./icon": "./icon.svg"
+  },
+  "files": [
+    "index.js",
+    "cordis.patch.yml",
+    "skills/**/*.md",
+    "scripts/*.mjs",
+    "AGENTS.md",
+    "kit/*.json",
+    "locale/*.json",
+    "icon.svg"
+  ],
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  },
+  "scripts": {
+    "preflight": "node scripts/preflight.mjs",
+    "studio:root": "node scripts/studio-root.mjs",
+    "new:episode": "node scripts/new-episode.mjs",
+    "validate": "node scripts/validate-episode.mjs",
+    "qa:media": "node scripts/qa-media.mjs",
+    "test": "node --test tests/*.test.mjs",
+    "validate:narration": "node scripts/validate-narration.mjs",
+    "validate:styles": "node scripts/validate-style-refs.mjs"
+  },
+  "engines": {
+    "node": ">=20",
+    "dsh": ">=0.2.2-alpha.3"
+  }
+}

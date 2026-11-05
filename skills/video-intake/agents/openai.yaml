@@ -1,0 +1,3 @@
+interface:
+  display_name: "Video Intake"
+  short_description: "Understand a natural-language video request and source materials, determine intended viewers, educational"

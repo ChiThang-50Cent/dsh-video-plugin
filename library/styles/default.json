@@ -1,0 +1,17 @@
+{
+  "id": "default",
+  "language": "vi",
+  "aspectRatio": "16:9",
+  "resolution": [
+    1920,
+    1080
+  ],
+  "fps": 30,
+  "voicePreset": null,
+  "rendererPreference": [
+    "existing-project",
+    "ffmpeg",
+    "remotion"
+  ],
+  "safeMarginsPct": 5
+}

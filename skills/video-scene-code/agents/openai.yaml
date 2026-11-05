@@ -1,0 +1,3 @@
+interface:
+  display_name: "Video Scene Code"
+  short_description: "Implement or patch video scene code and renderer adapters. Use only for scenes that cannot be instantiate"

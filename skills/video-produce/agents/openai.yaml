@@ -1,0 +1,3 @@
+interface:
+  display_name: "Video Produce"
+  short_description: "Coordinate creation, revision, or full production of any video. Invoke when the user wants a finished vid"

@@ -1,0 +1,3 @@
+interface:
+  display_name: "Video Qa"
+  short_description: "Run efficient, risk-based video QA for script correctness, scene code, screenshots, timing, speech and fi"

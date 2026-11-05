@@ -1,0 +1,105 @@
+# The portable video studio bundle patch.
+#
+# Installing this bundle applies this patch as one profile layer and makes
+# available to every session in the profile:
+#
+#   video-studio        registers the studio skills globally and resolves roots
+#   video-producer      accountable coordinator; delegates only custom C scenes
+#   video-scene-worker  implements one isolated scene inside an assigned work/
+#
+# Rows name either a package that ships with DSH 0.2.2-rc.1 or this bundle's
+# own package, which the profile installs as a link. The studio skills are
+# registered from this package instead of being discovered under a project
+# root, so a session opened in another workspace still gets them.
+#
+# This file is both the bundle patch and a valid overlay for
+# `dsh ... --patch cordis.patch.yml --dump-config`; do not use both at once,
+# because duplicate preset ids fail declaration loading.
+#
+# A patch entry replaces the targeted row's whole `config`, so each row below
+# restates every key it owns. Child entry ids are unique inside their preset.
+
+- insert:
+    - id: video-studio
+      name: 'portable-video-studio'
+      config: {}
+      # Optional: point projects/library/cache at another directory.
+      # config:
+      #   dataRoot: /absolute/path
+
+    - id: preset-video-producer
+      name: '@deepseek-ai/dsh-agent-preset'
+      config:
+        id: video-producer
+        name: Video Producer
+        description: Coordinates full video production with reuse and risk-based QA.
+        order: 30
+        plugins:
+          - id: persona
+            name: '@deepseek-ai/dsh-persona'
+            config:
+              prefix: >-
+                You are the accountable producer for a general-purpose video studio.
+                Follow the workspace AGENTS.md. Load video-produce when a video is requested.
+                Delegate independent custom scenes only. Never assume a renderer or TTS engine.
+          - id: agent-instructions
+            name: '@deepseek-ai/dsh-agent-instructions'
+            config:
+              maxBytes: 32000
+          - id: tool-bash
+            name: '@deepseek-ai/dsh-tool-bash'
+            disabled: !!js process.platform === 'win32'
+          - id: tool-pwsh
+            name: '@deepseek-ai/dsh-tool-pwsh'
+            disabled: !!js process.platform !== 'win32'
+          - id: tool-fs
+            name: '@deepseek-ai/dsh-tool-fs'
+          - id: tool-fs-search
+            name: '@deepseek-ai/dsh-tool-fs-search'
+            config:
+              # Required by 0.2.2-rc.1; the shipped standard preset uses false.
+              sampleOverCapGlobResults: false
+          - id: skill-filesystem
+            name: '@deepseek-ai/dsh-skill-filesystem'
+          - id: tool-skill
+            name: '@deepseek-ai/dsh-tool-skill'
+          - id: tool-subagent
+            name: '@deepseek-ai/dsh-tool-subagent'
+            config:
+              provider: spawn
+              toolName: scene_worker
+              agentPreset: video-scene-worker
+              maxDepth: 1
+          - id: tool-subagent-control
+            name: '@deepseek-ai/dsh-tool-subagent-control'
+
+    - id: preset-video-scene-worker
+      name: '@deepseek-ai/dsh-agent-preset'
+      config:
+        id: video-scene-worker
+        name: Video Scene Worker
+        description: Writes one isolated C scene from a brief, checks and hands it back.
+        order: 31
+        plugins:
+          - id: persona
+            name: '@deepseek-ai/dsh-persona'
+            config:
+              prefix: >-
+                Implement one assigned video scene inside the assigned work directory.
+                Do not edit the main timeline, shared library, audio manifest or sibling scenes.
+                Use existing templates first and run targeted tests. Return scene-result.json.
+                Never delegate again.
+          - id: agent-instructions
+            name: '@deepseek-ai/dsh-agent-instructions'
+            config:
+              maxBytes: 12000
+          - id: tool-bash
+            name: '@deepseek-ai/dsh-tool-bash'
+            disabled: !!js process.platform === 'win32'
+          - id: tool-pwsh
+            name: '@deepseek-ai/dsh-tool-pwsh'
+            disabled: !!js process.platform !== 'win32'
+          - id: tool-fs
+            name: '@deepseek-ai/dsh-tool-fs'
+          - id: tool-skill
+            name: '@deepseek-ai/dsh-tool-skill'
