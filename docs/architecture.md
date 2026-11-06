@@ -11,7 +11,7 @@
 
 Input → intake (audience, mode, risk, sources) → through-line map → continuous narration draft → claim audit → editorial critique/revise → independent review when high-risk → **G0 freeze** → storyboard → reuse A/B/C → audio preflight → segment manifest → synthesis/cache → measured timeline → A instantiate / B patch / C delegate (≤2 concurrent) → static/geometry QA → targeted visual QA → integration/render → media QA → strict release → metrics → scene promotion.
 
-Synthesize speech sequentially before rendering rather than competing for memory or GPU resources. Keep scene-worker concurrency at two or fewer. The renderer checks available RAM against its configured minimum (1024 MiB by default) before allocating; libx264 defaults to half the logical CPUs, and the renderer attempts nice 10 on Linux and records priority failures. Auto rendering selects a real GPU engine when available, otherwise CPU with a reason; explicit GPU requests fail if unavailable. Use the DSH GPU runner for GPU rendering or NVENC inside the sandbox, and verify the actual execution context.
+Synthesize speech before rendering rather than competing for memory or GPU resources; with OmniVoice, `synthesize-narration.mjs` loads the model once and runs segments sequentially in one GPU process. Keep scene-worker concurrency at two or fewer. The episode renderer runs scenes as up to three parallel child processes (`--concurrency`); each checks available RAM against its configured minimum (1024 MiB by default) before allocating; libx264 defaults to half the logical CPUs, and the renderer attempts nice 10 on Linux and records priority failures. Auto rendering selects a real GPU engine when available, otherwise CPU with a reason; explicit GPU requests fail if unavailable. Use the DSH GPU runner for GPU rendering or NVENC inside the sandbox, and verify the actual execution context.
 
 **G0 has two gates.**
 
@@ -92,13 +92,15 @@ Only a QA-PASS, hash-recorded scene with clear limitations/version/backend compa
 
 ## 6. Reuse and cache
 
-Reuse priority: adequate A → B with the smallest diff → C. Reuse style/fonts/components/TTS caches. Cache audio by exact text, pronunciation, voice, engine/version/settings and language; scenes by template version, parameters, asset hashes, timing and backend. An untrusted cache is a MISS. A component revision triggers regression QA for representative dependants.
+Reuse priority: adequate A → B with the smallest diff → C. Reuse style/fonts/components/TTS caches. Cache audio by exact text, pronunciation, voice, engine/version/settings and language (segment fingerprint plus file hash); rendered scenes in `<episode>/.cache/render/` by scene source and its relative imports, episode `assets/`/`fonts/`, renderer code, duration, engine/encoder, body font and visual style hash; the loudness-normalized narration track by chunk bytes and target. An untrusted cache is a MISS. A component revision triggers regression QA for representative dependants.
+
+The rendered look is data, not scene code: the active visual style (`production.json` > `project.json` > `default`) is resolved once per render, its fonts registered, and exposed as `api.theme`. Its SHA-256 (style.json plus declared fonts) enters the scene cache key and the scene QA record, so a style switch re-renders and re-checks every affected scene.
 
 ## 7. Scene types
 
 Text reveal, formula, graph, number line, arithmetic/pattern, diagram, quote, map, timeline, photo pan/zoom, archival b-roll, lower-third, split comparison, UI capture, closing card. Store purpose separately from backend. A template without an installed adapter is not reusable.
 
-The Skia scene module exports `meta` (`id`, `durationSec`, `width`, `height`, `fps`) and deterministic `draw(ctx, t, api)`. The adapter supplies text, TeX formula, axes, plots, animation and annotation helpers. `render-scene.mjs` renders video and records `<out>.render.json`, or renders selected snapshots without encoding. The episode renderer consumes contiguous frame-aligned timeline entries with episode-relative scene module `source`, `startSec` and `durationSec`, and sequences existing audio chunks from zero; it does not run TTS. The final master must still pass the existing media and release gates.
+The Skia scene module exports `meta` (`id`, `durationSec`, `width`, `height`, `fps`) and deterministic `draw(ctx, t, api)`. The adapter supplies text, TeX formula, axes, plots, animation and annotation helpers and `api.theme`. `render-scene.mjs` renders video and records `<out>.render.json` (including the style id/hash), or renders selected snapshots without encoding. The episode renderer consumes contiguous frame-aligned timeline entries with episode-relative scene module `source`, `startSec` and `durationSec`, and sequences existing audio chunks from zero with two-pass loudness normalization; it does not run TTS. The final master must still pass the existing media and release gates.
 
 ## 8. QA, release and reporting
 
@@ -106,6 +108,6 @@ The Skia scene module exports `meta` (`id`, `durationSec`, `width`, `height`, `f
 - **G1** static contract/IDs/timing.
 - **G2** geometry/safe areas at decisive timestamps.
 - **G3** targeted motion/audio preview; frozen frames, silence, clipping, determinism.
-- **G4** release: real master probed by ffprobe and hash, `qa/final.json` PASS, `qa/media.json` bound to the master, scene QA, narrated/mixed G0+audio consistency, no stale markers.
-- **Media QA cost boundary**: FFprobe metadata by default; `--quality`/`--subtitles` targeted; duplicate/full passes only on explicit request. A narration or code edit must not trigger full-media QA.
+- **G4** release: real master probed by ffprobe and hash, `qa/final.json` PASS, `qa/media.json` bound to the master with loudness PASS (`NOT_APPLICABLE` only for audio-less silent/text-only), scene QA recording the current `styleSha256` and, for narrated/mixed, `narrationSha256`, narrated/mixed G0+audio consistency, no stale markers.
+- **Media QA cost boundary**: FFprobe metadata plus an EBU R128 loudness measurement by default; `--quality`/`--subtitles` targeted; duplicate/full passes only on explicit request. A narration or code edit must not trigger full-media QA.
 - **Metrics**: use `collect-metrics.mjs` on persisted DSH session logs, following workers. Separate wall-clock, active turns, tool execution/overlap, observed model latency, multi-agent overlap, worker concurrency, tokens/cache, retries, failed jobs and image reads. Missing measurements stay unavailable; no manual estimates labelled measured.

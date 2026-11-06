@@ -29,6 +29,7 @@
 - [ ] Audio paths are episode-relative; every approved segment has exactly one hashed, probeable chunk whose measured duration fits the timeline.
 - [ ] Release rejects stale artifacts and conflicting production-mode overrides; unavailable strict audio checks cannot pass.
 - [ ] GPU requirement failure stops rather than silently using CPU; jobs have explicit timeout/retry policy.
+- [ ] OmniVoice preflight passes `--model`/`--ref-text`; `synthesize-narration.mjs` loads the model once, refuses a CPU device, enforces per-segment and overall timeouts, and reuses only segments whose fingerprint and file hash match.
 - [ ] `qa-audio.mjs` checks numbers/operators/omissions and optional audio silence/clipping; ASR evidence is not truth.
 
 ## Scene/render/QA
@@ -36,11 +37,14 @@
 - [ ] First promotion into an empty library succeeds; invalid QA/collision leaves the catalog valid; hashes/version/backend are recorded.
 - [ ] At most two concurrent workers; depth and concurrency are reported separately; result changed files stay inside `work/` + allowlist.
 - [ ] Static/layout/timing checks pass; full-media QA is optional/targeted.
-- [ ] Release gate verifies the real master, QA hash binding, scene QA, G0/audio consistency and no stale marker (`exports/master.stale.json` after a narration revision blocks until a new master is rendered).
+- [ ] `render-episode.mjs` renders scenes in parallel; a rerun with no change hits the cache for every scene and the normalized audio; editing one scene (or an imported module) re-renders only its dependants; `--no-cache` re-renders all.
+- [ ] Narrated masters are normalized to project `audio.loudness` (default −16 LUFS / −1.5 dBTP) and `qa-media.mjs` loudness PASSes; an unnormalized master fails.
+- [ ] Visual style: `production.json` overrides `project.json` overrides `default`; a workspace package shadows the built-in; invalid packages (missing core colour, id mismatch, missing/escaping font) fail with the reason; switching style restyles `api.theme` scenes without code edits and re-renders every cached scene.
+- [ ] Release gate verifies the real master, QA hash binding, loudness, scene QA bound to the current `styleSha256` and (narrated/mixed) `narrationSha256`, G0/audio consistency and no stale marker (`exports/master.stale.json` after a narration revision blocks until a new master is rendered).
 
 ## Metrics
 - [ ] `collect-metrics.mjs` includes main and worker sessions and separates wall clock/tool/model/overlap.
-- [ ] Tokens, cached tokens, retries, failed jobs and image reads are measured when present; missing fields are unavailable, not guessed.
+- [ ] Tokens, cached tokens, cache hit ratio, retries, failed jobs and image reads are measured when present; missing cache counters on a recorded call count as zero; calls with no usage are listed and leave the aggregate unavailable, not guessed.
 
 ## Explicit gaps
 - [ ] The bundle does not ship a TTS provider, renderer, DOM bbox inspector or speech-quality model; these are adapters selected after preflight.

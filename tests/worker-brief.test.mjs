@@ -12,7 +12,7 @@ function fixture(t) {
   const project = path.join(root, 'projects', 'series')
   const write = (file, value) => { fs.mkdirSync(path.dirname(file), { recursive: true }); fs.writeFileSync(file, JSON.stringify(value)) }
   write(path.join(project, 'project.json'), { visualStyle: 'brand', styleRefs: [] })
-  write(path.join(root, 'library', 'visual-styles', 'brand', 'style.json'), { schemaVersion: 1, id: 'brand', colors: { ink: 'blue' }, typography: { body: { family: 'test-font' } } })
+  write(path.join(root, 'library', 'visual-styles', 'brand', 'style.json'), { schemaVersion: 1, id: 'brand', colors: { background: 'black', ink: 'blue', muted: 'gray', line: 'gray', accent: 'gold', structure: 'teal', success: 'green', error: 'red' }, typography: { body: { family: 'test-font' } } })
   function episode(name) {
     const dir = path.join(project, 'episodes', name)
     write(path.join(dir, 'production.json'), { mode: 'narrated' })

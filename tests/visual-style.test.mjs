@@ -27,7 +27,7 @@ function look(data, id, colors = {}, extra = {}) {
   const dir = path.join(data, 'library', 'visual-styles', id)
   fs.mkdirSync(dir, { recursive: true })
   fs.writeFileSync(path.join(dir, 'style.json'), JSON.stringify({
-    schemaVersion: 1, id, colors: { background: '#000000', ink: '#ffffff', ...colors },
+    schemaVersion: 1, id, colors: { background: '#000000', ink: '#ffffff', muted: '#888888', line: '#444444', accent: '#ffcc00', structure: '#00ccaa', success: '#00cc66', error: '#ff4444', ...colors },
     typography: { body: { family: 'sans-serif', size: 40 } }, ...extra,
   }))
   return dir
@@ -63,6 +63,8 @@ test('broken packages are rejected with the reason', (t) => {
   assert.throws(() => resolveVisualStyle({ episodeRoot: episode }), /escapes the style package/)
   look(data, 'broken', {}, { id: 'other' })
   assert.throws(() => resolveVisualStyle({ episodeRoot: episode }), /does not match its directory/)
+  look(data, 'broken', {}, { colors: { background: '#000000', ink: '#ffffff' } })
+  assert.throws(() => resolveVisualStyle({ episodeRoot: episode }), /colors\.muted is required/)
   assert.throws(() => resolveVisualStyle({ episodeRoot: episode, id: '../x' }), /lowercase slug/)
 })
 
@@ -74,7 +76,8 @@ test('the style hash covers style.json and the font files it declares', (t) => {
   const first = resolveVisualStyle({ episodeRoot: episode, id: 'branded' }).sha256
   fs.writeFileSync(path.join(dir, 'fonts', 'Brand.ttf'), 'font v2')
   const second = resolveVisualStyle({ episodeRoot: episode, id: 'branded' }).sha256
-  setJson(path.join(dir, 'style.json'), { colors: { background: '#000000', ink: '#eeeeee' } })
+  const styleFile = path.join(dir, 'style.json')
+  setJson(styleFile, { colors: { ...JSON.parse(fs.readFileSync(styleFile, 'utf8')).colors, ink: '#eeeeee' } })
   const third = resolveVisualStyle({ episodeRoot: episode, id: 'branded' }).sha256
   assert.equal(new Set([first, second, third]).size, 3)
 })

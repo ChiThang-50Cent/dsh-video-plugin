@@ -60,7 +60,7 @@ Install the package dependencies and FFmpeg, then run `node scripts/preflight.mj
 ```bash
 node scripts/render-scene.mjs scene.mjs --out scene.mp4 --engine auto --encoder auto
 node scripts/render-scene.mjs scene.mjs --snapshots-only --frames 0.5,4,9.5 --frames-dir frames --contact-sheet contact.png
-node scripts/render-episode.mjs path/to/episode
+node scripts/render-episode.mjs path/to/episode --out exports/master-v2.mp4 --json
 ```
 
 The scene CLI also accepts `--engine cpu|gpu|auto`, `--encoder auto|h264_nvenc|libx264`, `--threads n`, `--min-free-mem-mib n`, `--body-font <family>`, `--frames`, `--frames-dir`, `--contact-sheet` and `--json`. A full render writes `<out>.render.json`; snapshots-only requires frame times and a frames directory and does not require `--out`. The episode renderer consumes frame-aligned, contiguous timeline scenes with episode-relative `source`, `startSec` and `durationSec`; audio chunks are read in manifest order from time zero. It probes each audio stream and requires its measured duration to match the manifest within 0.05 seconds. Audio longer than the timeline is rejected; shorter audio is padded with silence. Silent and text-only episodes still require `audio/manifest.json`, but may have empty chunks. The renderer does not synthesize speech.
@@ -68,6 +68,8 @@ The scene CLI also accepts `--engine cpu|gpu|auto`, `--encoder auto|h264_nvenc|l
 The visual style is resolved per episode: `production.json.visualStyle` overrides `project.json.visualStyle`, falling back to the built-in `default`; `--visual-style <id>` overrides both for one render. `--body-font <family>` overrides only the body font. The render report records the style id and SHA-256 (style.json plus its font files), and scene QA must record the same `styleSha256` before release.
 
 Episode rendering refuses to replace an existing output unless `--overwrite` is explicitly supplied. It keeps per-scene reports in `reports/render-scenes/<id>.render.json`; intermediate videos are discarded, so each report's `output` is null and `episodeOutput` identifies the master. Do not overwrite a released master without authorization.
+
+Scenes render as parallel child processes (`--concurrency N`, default min(3, CPUs/4), at least one; NVENC is capped at three). Each scene is cached under `<episode>/.cache/render/` by a key covering its source and every relative import, the episode `assets/` and `fonts/`, the renderer code, duration, engine/encoder, body font and the visual style hash; only scenes whose inputs changed re-render, and `--no-cache` forces all. Narrated audio gets two-pass EBU R128 normalization to project `audio.loudness` (default −16 LUFS integrated, −1.5 dBTP); the normalized track is cached by the chunk bytes and target. The report records per-scene `cache`/timings, `style` and `audio.loudness`. Run it as one blocking command with a generous timeout rather than polling a log. Measured on the 12-minute ep-803 copy: 276 s cold (401 s sequential before), 43 s after editing one scene, 23 s with nothing changed.
 
 `auto` Skia rendering selects GPU when a real GPU engine is available, otherwise CPU with a reason; an explicit GPU engine requires a working GPU and fails otherwise. Encoder `auto` probes a real NVENC encode and falls back to libx264 with a reason. The default free-RAM minimum is 1024 MiB; libx264 defaults to half the logical CPUs and the renderer attempts nice 10 on Linux, recording priority failures in the report. Synthesize TTS sequentially before rendering, and run at most two scene workers. See [GPU inside the DSH sandbox](docs/dsh.md#gpu-inside-the-dsh-sandbox) for GPU rendering and NVENC access.
 
@@ -146,6 +148,9 @@ Before batch speech:
 ```bash
 node scripts/audio-preflight.mjs --provider espeak-ng --voice-reference voice.wav \
   --synthesize-sample --json
+node scripts/audio-preflight.mjs --provider omnivoice --provider-command /venv/bin/omnivoice-infer \
+  --model /path/to/OmniVoice-checkpoint --voice-reference voice.wav --ref-text "exact transcript" \
+  --synthesize-sample --require-gpu --json
 ```
 
 - `nvidia-smi` proves hardware, not that the provider uses it. The provider command, configured device probe, voice reference and short measured sample must pass. `--require-gpu` refuses an unknown/CPU backend instead of silently falling back.
@@ -153,6 +158,7 @@ node scripts/audio-preflight.mjs --provider espeak-ng --voice-reference voice.wa
 - Use bounded jobs with explicit timeouts/retries (`scripts/lib/bounded.mjs`). Never retry forever.
 - `node scripts/qa-audio.mjs <episode> --segments audio/segments.json [--audio]` checks numbers/operators/omissions deterministically and, with `--audio`, silence/clipping. ASR is optional advisory evidence, not truth.
 - Measure every WAV; never use word-count estimates as measured timing. Preserve valid caches and attribution.
+- OmniVoice batch: `node scripts/synthesize-narration.mjs <episode> --python /venv/bin/python --model <checkpoint> --voice-reference voice.wav --ref-text "<transcript>" --require-gpu [--timeout-ms 120000] [--retries 1] [--overall-timeout-ms 3600000] --json` keeps one model loaded for every segment (`scripts/lib/tts/omnivoice_batch.py`), refuses a CPU device, skips segments whose fingerprint and file hash still match, and writes `audio/manifest.json` `chunks[]`. Run audio preflight first in the same execution context. Measured: 6 segments (118 s of speech) in 39.5 s versus about 60 s with one process per segment.
 
 ## Scene library and reuse
 
@@ -172,13 +178,13 @@ node scripts/validate-episode.mjs <episode> --lint       # work in progress
 node scripts/validate-episode.mjs <episode> --release    # delivery
 ```
 
-`--lint` checks structure only. `--release` requires a real master verified by ffprobe and hash, `qa/final.json` PASS, `qa/media.json` bound to the current file, scene QA for every scene, G0 and audio consistency for narrated/mixed, and no unresolved stale marker. A fresh or incomplete episode is `INCOMPLETE`, never PASS. Media QA is metadata-only by default; `--quality`/`--subtitles` are targeted and optional, so narration/code edits do not trigger a full-media pass.
+`--lint` checks structure only. `--release` requires a real master verified by ffprobe and hash, `qa/final.json` PASS, `qa/media.json` bound to the current file with a passing loudness check, scene QA for every scene recording the current visual style hash (`styleSha256`) and, for narrated/mixed, the frozen narration hash (`narrationSha256`), G0 and audio consistency for narrated/mixed, and no unresolved stale marker. A fresh or incomplete episode is `INCOMPLETE`, never PASS. Media QA is metadata plus loudness by default; `--quality`/`--subtitles` are targeted and optional, so narration/code edits do not trigger a full-media pass.
 
 ## Worker isolation
 
 - Default: at most **two concurrent** scene workers. `maxDepth` (nesting) is a different control.
 - Workers own `work/<task-id>/`; the main agent owns narration, global timeline, assets and library promotion.
-- Generate worker prompts with `node scripts/worker-brief.mjs <episode> --scene <scene-id> --task <task-id> --wave <wave-id> --out <brief-file>` and dispatch the file verbatim. It reads the project style, production, storyboard, measured timeline, relevant narration and `<episode>/worker-plan.json` (override with `--plan`); each plan worker's `id` is its task id and `sceneId` identifies the scene. Only custom C scenes are delegated. Use the same wave id for the entire wave; without `--wave`, the task id is used for a single-worker wave.
+- Generate worker prompts with `node scripts/worker-brief.mjs <episode> --scene <scene-id> --task <task-id> --wave <wave-id> --out <brief-file>` and dispatch the file verbatim. It reads the active visual style (id, hash and tokens; scenes still read them from `api.theme` at render time), narration style references, production, storyboard, measured timeline, relevant narration and `<episode>/worker-plan.json` (override with `--plan`); each plan worker's `id` is its task id and `sceneId` identifies the scene. Only custom C scenes are delegated. Use the same wave id for the entire wave; without `--wave`, the task id is used for a single-worker wave.
 - The tool reports each block's UTF-8 byte length and SHA-256 on stderr, or in JSON with `--json`; `--json` without `--out` includes the full brief. The blocks are ordered studio contract, episode context, scene assignment. Keep generated files outside the episode during a wave so they cannot invalidate its snapshot. Snapshot and sandbox rules still apply.
 - Validate plans and results before integration:
 
@@ -197,11 +203,15 @@ node scripts/collect-metrics.mjs --session <main-session-id> --out reports/metri
 node scripts/collect-metrics.mjs --episode <episode-dir> --json
 ```
 
-The collector reads persisted DSH session JSONL (plain or zstd), follows `parentSession` to include scene workers, and separates wall-clock union, active turns, tool execution/union/overlap, observed model latency, multi-agent overlap, worker concurrency (distinct from delegation depth), tokens, cached tokens, retries, failed jobs and image reads. Missing data is `null`/`unavailable`; manual estimates are never labelled measured.
+The collector reads persisted DSH session JSONL (plain or zstd), follows `parentSession` to include scene workers, and separates wall-clock union, active turns, tool execution/union/overlap, observed model latency, multi-agent overlap, worker concurrency (distinct from delegation depth), tokens, cached tokens, cache hit ratio, retries, failed jobs and image reads. Missing data is `null`/`unavailable`; manual estimates are never labelled measured. A call that records input/output but no cache counters counts as zero cache; calls with no usage at all (for example interrupted ones) are listed in `missingUsage`, leave the aggregate unavailable and are excluded from the labelled `observed` subtotal.
 
-## Style references
+## Visual styles
 
-A project opts in with `project.json.styleRefs: ["indeterminate-forms"]`. Each id resolves to `<dataRoot>/library/styles/<id>/` with `style.json`, notes and optionally a source reference. The source transcript may be omitted from an installed package when `style.json` declares `sourceBundled: false` and `externalSource`; notes remain the reusable extract. Validate with:
+The look of rendered scenes (colours, typography, fonts, layout, motion) lives in swappable packages `<dataRoot>/library/visual-styles/<id>/`, chosen by `production.json.visualStyle` > `project.json.visualStyle` > built-in `default`. Add one with `node scripts/new-visual-style.mjs <id> --from <existing>` or seed it from local references with `node scripts/extract-style-refs.mjs <id> <files...> --rights "<note>"`; edit its `style.json`; switch by changing `visualStyle`; delete by removing the directory once nothing references it. Any change re-renders the affected scenes and requires scene QA again. Details: [library/visual-styles/README.md](library/visual-styles/README.md).
+
+## Narration style references
+
+A project opts in with `project.json.styleRefs: ["indeterminate-forms"]`. Each id resolves to `<dataRoot>/library/styles/<id>/` with `style.json`, notes and optionally a source reference. These shape voice and writing, not the rendered look. The source transcript may be omitted from an installed package when `style.json` declares `sourceBundled: false` and `externalSource`; notes remain the reusable extract. Validate with:
 
 ```bash
 node scripts/validate-style-refs.mjs projects/<series>
@@ -215,7 +225,7 @@ node --check index.js
 npm pack --dry-run
 ```
 
-The suite covers the false limit/self-review regression, unresolved blocking findings, missing claim evidence, spokenText semantic changes and valid pronunciation, external data roots, npm-package initialization, first-scene promotion and failure isolation, empty-episode release status, silent/text-only release, metrics aggregation, audio preflight, worker isolation, editorial evaluation fixtures and style validation.
+The suite covers the false limit/self-review regression, unresolved blocking findings, missing claim evidence, spokenText semantic changes and valid pronunciation, external data roots, npm-package initialization, first-scene promotion and failure isolation, empty-episode release status, silent/text-only release, release hash binding (narration, visual style, loudness), metrics aggregation and cache hit ratio, audio preflight, batch synthesis resume/timeout/CPU refusal, render cache invalidation and loudness normalization, visual style precedence/validation/hashing/restyling, worker isolation, editorial evaluation fixtures and style validation.
 
 ## Example request
 

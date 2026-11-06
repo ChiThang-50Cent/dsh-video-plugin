@@ -16,6 +16,8 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 export const DEFAULT_VISUAL_STYLE = 'default'
+/** Colour names every look defines, so any scene renders correctly under any style. */
+export const CORE_COLORS = ['background', 'ink', 'muted', 'line', 'accent', 'structure', 'success', 'error']
 const ID = /^[a-z][a-z0-9-]{0,63}$/
 const codeRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..', '..')
 
@@ -62,6 +64,9 @@ export function visualStyleErrors(style, packageDir) {
   }
   for (const [name, value] of Object.entries(isObject(style.colors) ? style.colors : {})) {
     if (typeof value !== 'string' || !value.trim()) errors.push(`colors.${name} must be a CSS color string`)
+  }
+  if (isObject(style.colors)) {
+    for (const name of CORE_COLORS) if (!(name in style.colors)) errors.push(`colors.${name} is required`)
   }
   for (const [role, value] of Object.entries(isObject(style.typography) ? style.typography : {})) {
     if (!isObject(value) || typeof value.family !== 'string' || !value.family.trim()) errors.push(`typography.${role}.family is required`)
