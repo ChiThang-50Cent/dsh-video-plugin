@@ -69,6 +69,10 @@ node /absolute/path/to/installed/video-studio/scripts/audio-preflight.mjs \
 
 The GPU section distinguishes `available`, `absent` and `hidden-by-sandbox`; host hardware evidence alone is not provider readiness. The recommended encoder is `h264_nvenc` only after a real NVENC encode passes, otherwise `libx264` with a reason. An optional `--python /path/to/python` checks that interpreter's Torch CUDA availability. For speech, require the provider's verified GPU identity and a passing sample; use a suitable voice reference and listen for quality.
 
+The built-in Skia renderer defaults to code-animated 2D scenes when preflight passes. Skia's rendering engine and FFmpeg's encoder are independent: CPU rendering can feed NVENC. Inside DSH, `--engine gpu` and NVENC require GPU devices exposed by this runner; verify the Skia engine and the real NVENC encode in the workload's sandbox, not just on the host. Explicit GPU requests must fail rather than silently use CPU; automatic selection may choose CPU and records why.
+
+Do not overlap TTS synthesis with rendering. The renderer's free-RAM guard can refuse to start; libx264 encoding is thread-capped and the renderer attempts reduced scheduling priority, recording priority failures. Keep scene workers to at most two concurrently.
+
 `omnivoice-infer-batch` has no device flag. Run it only after the GPU audio preflight passes in the same execution context, and require the batch adapter to assert Torch CUDA availability before synthesis. Do not silently fall back to CPU.
 
 **Security:** this grants sandboxed commands access to GPU devices, with the associated device/driver attack surface and shared GPU resources. It does not change the sandbox filesystem policy. To revert, remove the added row or restore the prior `sandbox` row and its configuration in `$DSH_HOME/cordis.patch.yml`, then restart DSH. Re-run preflight in the sandbox to check the resulting visibility.

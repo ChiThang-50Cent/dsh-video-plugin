@@ -22,11 +22,13 @@ node <studio>/scripts/validate-narration.mjs <episode-dir>   # both
 
 **G1 static/contract.** Scene IDs, asset paths, renderer availability, keyframes within duration, valid formulas/numbers, code lint/tests where relevant.
 
-**G2 layout.** Programmatically sample decisive timestamps; check DOM/SVG bounding boxes and off-screen clipping where a browser renderer applies. Handle explicitly allowed overlaps as risky, not automatic PASS. For footage, inspect safe area/captions.
+**G2 layout.** Programmatically sample decisive timestamps; inspect Skia snapshots for bounds and clipping, or DOM/SVG bounding boxes where a browser renderer applies. Handle explicitly allowed overlaps as risky, not automatic PASS. For footage, inspect safe area/captions.
+
+For a Skia scene, render selected timestamps without encoding: `node <studio>/scripts/render-scene.mjs <scene.mjs> --snapshots-only --frames 0.5,4,9.5 --frames-dir <dir> --contact-sheet <png>`. Choose timestamps appropriate to the actual duration; retain snapshots and findings as QA evidence.
 
 **G3 motion/audio.** Targeted preview for C, changed B or alerts; determinism when reproducibility matters; blank/frozen frames, silence, clipping, timing drift. Model image inspection only for new visual language or unresolved warnings. Avoid repeated main+worker inspection.
 
-Before final encoding, run `node <studio>/scripts/preflight.mjs` in the actual render execution context and use its recommended encoder: `h264_nvenc` only if the real NVENC encode passed, otherwise `libx264`. Report any CPU encode and the preflight reason; hardware visibility alone is not an encode test.
+Before final encoding, run `node <studio>/scripts/preflight.mjs` in the actual render execution context. Select the Skia engine independently of the encoder; an explicit GPU request must fail if GPU rendering is unavailable. Use `h264_nvenc` only if the real NVENC encode passed, otherwise `libx264`. Report CPU engine/encoding and the reason; hardware visibility alone is not an encode test. GPU rendering and NVENC inside DSH require the GPU sandbox runner.
 
 **G4 final/release.** Use `node <studio>/scripts/validate-episode.mjs <episode-dir> --release`. It requires:
 - a real master verified by ffprobe and by hash;

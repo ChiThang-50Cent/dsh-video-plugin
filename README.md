@@ -1,6 +1,6 @@
 # Portable Video Studio for DeepSeek Harness 0.5.0
 
-This repository is two things in one checkout: an installable **DSH bundle** that adds two Agent Presets (`video-producer`, `video-scene-worker`), and a portable **video-studio workspace** with nine skills, contract examples, deterministic helpers and a per-episode tree. It is backend-agnostic: no `math-motion` project, HyperFrames, OmniVoice, Python runtime, or particular genre is required.
+This repository is two things in one checkout: an installable **DSH bundle** that adds two Agent Presets (`video-producer`, `video-scene-worker`), and a portable **video-studio workspace** with nine skills, contract examples, deterministic helpers and a per-episode tree. The built-in Skia adapter is the default for code-animated 2D scenes when preflight passes; no `math-motion` project, OmniVoice, Python runtime, or particular genre is required.
 
 The 0.5 line makes narration quality a real evidence-based gate, adds a meaning-preserving pronunciation contract, separates lint from release, and hardens workspace, audio, metrics and worker integration.
 
@@ -10,7 +10,7 @@ The 0.5 line makes narration quality a real evidence-based gate, adds a meaning-
 - `AGENTS.md`: standing rules for the studio.
 - `skills/`: nine DSH skills. `video-narration/references/` carries the Vietnamese style guide, annotated examples and the full G0 review/claim/review schemas.
 - `kit/`: example contracts: project, production mode, through-line map, claim check, narration review, segments, scene contract/result, worker plan.
-- `scripts/`: zero-dependency Node helpers for workspace init, episode creation, narration integrity/editorial gates, revision, narration lint, editorial pre-scan, scene promotion, episode lint/release, audio preflight/QA, media QA, worker validation and log-based metrics.
+- `scripts/`: Node helpers for rendering, workspace init, episode creation, narration integrity/editorial gates, revision, narration lint, editorial pre-scan, scene promotion, episode lint/release, audio preflight/QA, media QA, worker validation and log-based metrics.
 - `library/`: approved scene catalog, templates and narration style packages.
 - `projects/`: one directory per series; `episodes/` holds self-contained episodes.
 - `docs/`: architecture, runbook, acceptance checks, examples and DSH notes.
@@ -24,6 +24,8 @@ The 0.5 line makes narration quality a real evidence-based gate, adds a meaning-
 2. Extract this ZIP to `video-studio`, enter it and optionally `git init`.
 
 3. Run `node scripts/preflight.mjs` to inspect render/audio tools and the execution environment's GPU visibility and encoder recommendation. Preflight installs nothing and does not treat GPU hardware as a ready TTS backend. For optional GPU access inside DSH, configure the home-level sandbox runner and verify it as described in [GPU inside the DSH sandbox](docs/dsh.md#gpu-inside-the-dsh-sandbox); review the security and reversion instructions first.
+
+   The built-in Skia adapter needs its installed Node dependencies and FFmpeg. Its CPU and GPU rendering engines are separate from the video encoder: a CPU-rendered scene can use NVENC if its real encode probe passes. GPU rendering or NVENC inside DSH requires the GPU sandbox runner and verification in that same sandbox context.
 
 4. Install the bundle from the Web **Plugins** page (local path) or with `plugin_manager` `action: install_bundle`. The bundle applies `cordis.patch.yml` and shows `Video studio presets`.
 
@@ -50,6 +52,26 @@ node /path/to/video-studio/scripts/init-workspace.mjs --data-root /data/video
 Precedence is explicit `--data-root`/plugin `dataRoot` > `VIDEO_STUDIO_ROOT` > `studio.config.json` > initialized workspace ancestor or cwd. Relative explicit and environment values resolve against cwd; relative config values resolve against the config file directory. The plugin and CLI helpers use the same resolver. If `dataRoot` is set only in the plugin row, export the same value for shell helpers or pass `--data-root`; a profile row is not visible to a CLI process. Run the code root's `scripts/studio-root.mjs` from the workspace to print effective roots. Initialization is idempotent and copies missing built-in styles/catalog; it never overwrites existing user files.
 
 Install the npm payload separately from production data. The package deliberately excludes user-provided transcripts and includes `library/catalog.json`, `library/styles/default.json` and the public style metadata/notes needed to initialize.
+
+## Built-in Skia renderer
+
+Install the package dependencies and FFmpeg, then run `node scripts/preflight.mjs` in the intended execution context. A scene is an ES module exporting `meta = { id, durationSec, width, height, fps }` and `draw(ctx, t, api)`. Drawing must depend only on its inputs. The built-in API provides easing, fades and crossfades, wrapped text, cached TeX formulas, axes, progressively revealed function plots, arrows and highlights. Set the body font from the project style for Vietnamese text and formula `\text`.
+
+```bash
+node scripts/render-scene.mjs scene.mjs --out scene.mp4 --engine auto --encoder auto
+node scripts/render-scene.mjs scene.mjs --snapshots-only --frames 0.5,4,9.5 --frames-dir frames --contact-sheet contact.png
+node scripts/render-episode.mjs path/to/episode
+```
+
+The scene CLI also accepts `--engine cpu|gpu|auto`, `--encoder auto|h264_nvenc|libx264`, `--threads n`, `--min-free-mem-mib n`, `--body-font <family>`, `--frames`, `--frames-dir`, `--contact-sheet` and `--json`. A full render writes `<out>.render.json`; snapshots-only requires frame times and a frames directory and does not require `--out`. The episode renderer consumes frame-aligned, contiguous timeline scenes with episode-relative `source`, `startSec` and `durationSec`; audio chunks are read in manifest order from time zero. It probes each audio stream and requires its measured duration to match the manifest within 0.05 seconds. Audio longer than the timeline is rejected; shorter audio is padded with silence. Silent and text-only episodes still require `audio/manifest.json`, but may have empty chunks. The renderer does not synthesize speech.
+
+Pass `--body-font <family>` to scene or episode rendering to select the font used for body text and TeX `\text`. Without an override, episode rendering uses `bodyFont` from the project style, resolved inside the workspace.
+
+Episode rendering refuses to replace an existing output unless `--overwrite` is explicitly supplied. It keeps per-scene reports in `reports/render-scenes/<id>.render.json`; intermediate videos are discarded, so each report's `output` is null and `episodeOutput` identifies the master. Do not overwrite a released master without authorization.
+
+`auto` Skia rendering selects GPU when a real GPU engine is available, otherwise CPU with a reason; an explicit GPU engine requires a working GPU and fails otherwise. Encoder `auto` probes a real NVENC encode and falls back to libx264 with a reason. The default free-RAM minimum is 1024 MiB; libx264 defaults to half the logical CPUs and the renderer attempts nice 10 on Linux, recording priority failures in the report. Synthesize TTS sequentially before rendering, and run at most two scene workers. See [GPU inside the DSH sandbox](docs/dsh.md#gpu-inside-the-dsh-sandbox) for GPU rendering and NVENC access.
+
+NVENC uses VBR CQ 28, zero target bitrate and preset p5; libx264 uses CRF 23 and medium preset. On the included 10-second 1080p example, NVENC produced 296,393 bytes versus 231,601 bytes for libx264 (1.28×); comparing decoded outputs gave SSIM 0.999145 and PSNR 52.26 dB. These measurements are content- and hardware-dependent, not a general quality guarantee.
 
 ## Narration-first production (G0)
 

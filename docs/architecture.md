@@ -5,11 +5,13 @@
 - **DSH plugins**: executable capabilities and Agent Presets. DSH owns models, context, shell, skills, delegation, permissions and session persistence.
 - **DSH skills**: procedural instructions loaded selectively. They are not processes, renderers or substitutes for subagents.
 - **Video project**: immutable sources, production mode, narration/review evidence, shot plans, audio, scene data and QA for one series/episode.
-- **Adapters**: installed and verified render/TTS tools. FFmpeg is the minimal delivery/mixing backend; Remotion, browser SVG/Canvas, Blender or others are opt-in. No engine is assumed. Use the execution-context preflight's real-encode recommendation for final encoding and report CPU encoding with its reason; GPU hardware evidence alone does not verify a TTS provider.
+- **Adapters**: the built-in Skia adapter is the default for code-animated 2D scenes when preflight passes. FFmpeg handles encoding, compositing and delivery; Remotion, browser SVG/Canvas, Blender or others remain opt-in when installed and verified. Rendering engine and video encoder are independent choices. Use the execution-context preflight's real-encode recommendation for final encoding and report CPU encoding with its reason; GPU hardware evidence alone does not verify a TTS provider.
 
 ## 2. Workflow
 
 Input → intake (audience, mode, risk, sources) → through-line map → continuous narration draft → claim audit → editorial critique/revise → independent review when high-risk → **G0 freeze** → storyboard → reuse A/B/C → audio preflight → segment manifest → synthesis/cache → measured timeline → A instantiate / B patch / C delegate (≤2 concurrent) → static/geometry QA → targeted visual QA → integration/render → media QA → strict release → metrics → scene promotion.
+
+Synthesize speech sequentially before rendering rather than competing for memory or GPU resources. Keep scene-worker concurrency at two or fewer. The renderer checks available RAM against its configured minimum (1024 MiB by default) before allocating; libx264 defaults to half the logical CPUs, and the renderer attempts nice 10 on Linux and records priority failures. Auto rendering selects a real GPU engine when available, otherwise CPU with a reason; explicit GPU requests fail if unavailable. Use the DSH GPU runner for GPU rendering or NVENC inside the sandbox, and verify the actual execution context.
 
 **G0 has two gates.**
 
@@ -94,6 +96,8 @@ Reuse priority: adequate A → B with the smallest diff → C. Reuse style/fonts
 ## 7. Scene types
 
 Text reveal, formula, graph, number line, arithmetic/pattern, diagram, quote, map, timeline, photo pan/zoom, archival b-roll, lower-third, split comparison, UI capture, closing card. Store purpose separately from backend. A template without an installed adapter is not reusable.
+
+The Skia scene module exports `meta` (`id`, `durationSec`, `width`, `height`, `fps`) and deterministic `draw(ctx, t, api)`. The adapter supplies text, TeX formula, axes, plots, animation and annotation helpers. `render-scene.mjs` renders video and records `<out>.render.json`, or renders selected snapshots without encoding. The episode renderer consumes contiguous frame-aligned timeline entries with episode-relative scene module `source`, `startSec` and `durationSec`, and sequences existing audio chunks from zero; it does not run TTS. The final master must still pass the existing media and release gates.
 
 ## 8. QA, release and reporting
 

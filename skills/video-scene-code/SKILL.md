@@ -6,9 +6,11 @@ description: Implement or patch video scene code and renderer adapters. Use only
 # Scene coding contract
 
 1. Read the assigned `scene.json`, measured timing, frozen narration segments, scene style, closest PASS scene, supported backend and output contract. Do not reread an unrelated project tree.
-2. Check native tools and choose a working backend: FFmpeg for edits/compositing; Remotion or browser canvas/SVG for code animation; Blender if 3D is required. HyperFrames is optional, never assumed. Do not install packages without authorization.
+2. Use the built-in Skia adapter for code-animated 2D scenes when preflight passes; FFmpeg handles compositing and delivery. Remotion, browser canvas/SVG and Blender remain opt-in when verified and appropriate. Do not install packages without authorization.
 3. Work only in the assigned isolated `work/<task-id>/`. Never edit shared timelines, render config, TTS manifests, narration, storyboard, catalog or another worker's output. The parent integrates changes.
-4. Favor deterministic scene functions; isolate data from layout/animation; reuse theme/components; avoid hard-coded global paths. Do not read the whole script or assets outside the brief.
+4. Implement deterministic scene functions: export `meta = { id, durationSec, width, height, fps }` and `draw(ctx, t, api)`. Isolate data from layout/animation and reuse the provided components and project style; avoid hard-coded global paths. Do not read the whole script or assets outside the brief.
+   The API offers `easing.linear`, `easing.easeInOut`, `fade(t, start, duration)`, `crossfade(t, start, duration)`, `text(text, x, y, options)`, `formula(tex, x, y, options)`, `axes(options)`, `plot(fn, options)`, `arrow(x1, y1, x2, y2, options)` and `highlight(x, y, width, height, options)`. Text and formula return bounds and baseline. Supply the project body font for Vietnamese and TeX `\text` with `--body-font <family>`.
+   Render with `node <studio>/scripts/render-scene.mjs <scene.mjs> --out <scene.mp4>`; for targeted QA use `--snapshots-only --frames 0.5,4,9.5 --frames-dir <dir>` and optionally `--contact-sheet <png>`. A full render writes `<out>.render.json`.
 5. Implement checks for duration, asset existence, bounds, NaN/invalid math and animation end. For JS/TS run existing ESLint/TypeScript/format/tests; do not introduce a framework solely for lint.
 6. Render just the changed scene/frames, inspect one representative contact sheet if new/complex, and stop once acceptance passes. No speculative polish loop.
 7. Deliver `scene-result.json` with `sceneId`, `status`, `codePaths`, `previewPaths`, `qaReportPath`, `backendVersion`, `changedFiles`, `reuse` (`A/B/C` or `reuseFrom`), and notes/risks. Mark FAIL rather than fabricate PASS.

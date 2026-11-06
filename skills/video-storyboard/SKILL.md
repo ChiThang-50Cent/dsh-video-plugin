@@ -18,4 +18,4 @@ Inputs: frozen `narration.md`, `narration-review.json` with `status: "pass"` and
 9. If narration changes through `scripts/revise-narration.mjs`, only scenes whose spans changed are stale. Propose a re-plan of those; never edit `narration.md`.
 10. Identify 3-5 decisive timestamps per new complex scene for geometry/snapshot QA. Base scenes may need fewer.
 
-Keep visual intent separate from backend implementation. The storyboard is renderer-agnostic; a scene whose backend is unavailable is not reusable until an adapter exists.
+Keep visual intent separate from backend implementation. For code-animated 2D scenes, plan for the built-in Skia adapter when preflight passes; FFmpeg handles compositing and delivery. Other verified engines are opt-in. A scene whose backend is unavailable is not reusable until an adapter exists.

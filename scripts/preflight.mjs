@@ -10,8 +10,10 @@
  * Exit:  0 report produced, 2 a requested prerequisite is missing.
  */
 import fs from 'node:fs'
+import os from 'node:os'
 import { pathToFileURL } from 'node:url'
 import { probeCommand, runBounded } from './lib/bounded.mjs'
+import { availableMemory, createEngine } from './lib/render/engine.mjs'
 
 const BASE_COMMANDS = [
   ['node', ['--version']],
@@ -72,7 +74,7 @@ function probeGpu(run, env, exists, readDirectory) {
   }
 }
 
-function probeNvenc(run, env) {
+export function probeNvenc(run = runBounded, env = process.env) {
   // Actually initialize the encoder and encode a frame; the encoder list alone
   // does not establish driver/device access.
   const result = run('ffmpeg', [
@@ -120,6 +122,22 @@ export function buildPreflight(options = {}) {
   const nvenc = probeNvenc(run, env)
   const cuda = probeCuda(run, env, options.python)
   const assessment = gpuAssessment(gpu, nvenc)
+  let cpu
+  let gpuEngine
+  for (const mode of ['cpu', 'gpu']) {
+    try {
+      const result = createEngine(16, 16, mode)
+      const info = { available: true, ...result.details }
+      result.canvas.dispose()
+      if (mode === 'cpu') cpu = info
+      else gpuEngine = info
+    } catch (error) {
+      const info = { available: false, error: error.message }
+      if (mode === 'cpu') cpu = info
+      else gpuEngine = info
+    }
+  }
+  const memory = { availableMiB: Math.floor(availableMemory() / 1048576), totalMiB: Math.floor(os.totalmem() / 1048576) }
   const audioProviders = AUDIO_PROVIDERS.map((provider) => {
     const probe = command(provider.command, provider.args, { env })
     return {
@@ -177,6 +195,14 @@ export function buildPreflight(options = {}) {
     audioProviders,
     asrProviders,
     capabilities,
+    skia: { cpu, gpu: gpuEngine },
+    memory,
+    recommendations: {
+      renderEngine: cpu.available ? 'cpu' : null,
+      renderEngineReason: cpu.available ? 'CPU Skia is the deterministic default for 2D scenes' : 'CPU Skia is unavailable',
+      videoEncoder: assessment.recommendedEncoder,
+      videoEncoderReason: nvenc.available ? 'NVENC passed a real encode probe' : `NVENC unavailable (${nvenc.error}); use libx264`,
+    },
     errors,
   }
 }
@@ -195,6 +221,10 @@ function main() {
     console.log(`NVENC: ${report.gpu.nvenc.available ? 'verified' : `unavailable (${report.gpu.nvenc.error})`}`)
     console.log(`PyTorch CUDA: ${report.gpu.cuda.tested ? (report.gpu.cuda.available ? 'available' : `unavailable (${report.gpu.cuda.error ?? 'no CUDA device'})`) : 'not tested'}`)
     console.log(`Recommended encoder: ${report.gpu.recommendedEncoder} (software fallback is not verified)`)
+    console.log(`Skia CPU: ${report.skia.cpu.available ? 'available' : report.skia.cpu.error}`)
+    console.log(`Skia GPU: ${report.skia.gpu.available ? JSON.stringify(report.skia.gpu) : report.skia.gpu.error}`)
+    console.log(`Available RAM: ${report.memory.availableMiB} MiB; VRAM free: ${report.gpu.devices.map((device) => device.memoryFreeMiB + ' MiB').join(', ') || 'unknown'}`)
+    console.log(`Recommended render engine: ${report.recommendations.renderEngine ?? 'none'} (${report.recommendations.renderEngineReason})`)
     console.log(`Remediation: ${report.gpu.remediation}`)
     console.log(`Audio: ${report.capabilities.audioSynthesis.reason}`)
     for (const error of report.errors) console.log(`Error: ${error}`)

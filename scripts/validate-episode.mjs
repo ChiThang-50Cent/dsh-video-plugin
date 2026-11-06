@@ -143,6 +143,9 @@ export async function validateEpisode(episodeDir, options = {}) {
     if (!seen.has(scene.id)) errors.push(`Timeline references unknown scene: ${scene.id}`)
     if (timed.has(scene.id)) errors.push(`Timeline repeats scene: ${scene.id}`)
     timed.add(scene.id)
+    if (scene.source !== undefined && (typeof scene.source !== 'string' || !scene.source.endsWith('.mjs') || path.isAbsolute(scene.source) || inside(root, scene.source) === undefined)) {
+      errors.push(`Timeline scene ${scene.id} source must be an episode-relative .mjs path`)
+    }
     if (!(Number.isFinite(scene.startSec) && scene.startSec >= 0 && Number.isFinite(scene.durationSec) && scene.durationSec > 0)) {
       errors.push(`Invalid timing ${scene.id}`)
       continue

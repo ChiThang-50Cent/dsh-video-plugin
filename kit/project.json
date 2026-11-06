@@ -4,7 +4,7 @@
   "slug": "example-series",
   "style": "../../library/styles/default.json",
   "episodesDir": "episodes",
-  "renderer": "auto",
+  "renderer": "skia-canvas",
   "tts": "auto",
   "sourcePolicy": "original-or-attributed",
   "styleRefs": [],
