@@ -26,6 +26,8 @@ node <studio>/scripts/validate-narration.mjs <episode-dir>   # both
 
 **G3 motion/audio.** Targeted preview for C, changed B or alerts; determinism when reproducibility matters; blank/frozen frames, silence, clipping, timing drift. Model image inspection only for new visual language or unresolved warnings. Avoid repeated main+worker inspection.
 
+Before final encoding, run `node <studio>/scripts/preflight.mjs` in the actual render execution context and use its recommended encoder: `h264_nvenc` only if the real NVENC encode passed, otherwise `libx264`. Report any CPU encode and the preflight reason; hardware visibility alone is not an encode test.
+
 **G4 final/release.** Use `node <studio>/scripts/validate-episode.mjs <episode-dir> --release`. It requires:
 - a real master verified by ffprobe and by hash;
 - `qa/final.json` PASS with no blockers;

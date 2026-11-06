@@ -13,9 +13,9 @@
  *
  * Usage:
  *   node scripts/audio-preflight.mjs --provider <id|espeak-ng|piper|edge-tts|say|omnivoice>
- *        [--voice <id/model>] [--voice-reference <wav>] [--sample-text <text>|--sample-file <txt>]
- *        [--synthesize-sample] [--out <dir>] [--require-gpu] [--device-probe-command <cmd>]
- *        [--timeout-ms <n>] [--retries <n>] [--json]
+ *        [--provider-command <path>] [--voice <id/model>] [--voice-reference <wav>] [--language <language>]
+ *        [--sample-text <text>|--sample-file <txt>] [--synthesize-sample] [--out <dir>]
+ *        [--require-gpu] [--device-probe-command <cmd>] [--timeout-ms <n>] [--retries <n>] [--json]
  *
  * Exit: 0 ready for batch, 1 not ready/unverified, 2 usage.
  */
@@ -64,11 +64,14 @@ export const PROVIDER_DEFINITIONS = {
     synthesize: ({ output, text, voice }) => ({ args: ['-o', output, ...(voice ? ['-v', voice] : []), '--', text] }),
   },
   omnivoice: {
-    command: 'omnivoice',
-    versionArgs: ['--version'],
+    command: 'omnivoice-infer',
+    versionArgs: ['--help'],
     device: 'unknown',
     outputExtension: '.wav',
-    synthesize: ({ output, text, voice }) => ({ args: ['--text', text, '--output', output, ...(voice ? ['--voice', voice] : [])] }),
+    synthesize: ({ output, text, voiceReference, language, requireGpu }) => ({
+      args: ['--text', text, '--output', output, ...(voiceReference ? ['--ref_audio', voiceReference] : []),
+        ...(language ? ['--language', language] : []), ...(requireGpu ? ['--device', 'cuda'] : [])],
+    }),
   },
 }
 
@@ -140,6 +143,18 @@ function resolveSampleText(options) {
   return 'Xin chào. Đây là một phép thử: mười sáu cộng năm bằng hai mươi mốt. Nếu bạn nghe rõ con số và phép tính này, giọng đọc đã sẵn sàng.'
 }
 
+function sandboxGpuHidden() {
+  let hostEvidence = false
+  try { hostEvidence = fs.readdirSync('/proc/driver/nvidia/gpus').length > 0 } catch {}
+  if (!hostEvidence) {
+    const lspci = runBounded('lspci', ['-nn'], { timeoutMs: 5000, retries: 0 })
+    hostEvidence = lspci.ok && /nvidia/i.test(lspci.stdout)
+  }
+  let nodes = false
+  try { nodes = fs.readdirSync('/dev').some((name) => /^nvidia(?:\d+|ctl|uvm|uvm-tools|modeset|caps)$/.test(name) || name === 'dri') } catch {}
+  return hostEvidence && !nodes
+}
+
 /**
  * @param {object} options
  * @param {object} [deps]
@@ -166,9 +181,10 @@ export function runAudioPreflight(options = {}, deps = {}) {
     }
   }
 
-  const probe = (deps.probeCommand ?? probeCommand)(providerDefinition.command, providerDefinition.versionArgs)
-  checks.push({ id: 'provider.installed', status: probe.available ? 'PASS' : 'FAIL', detail: probe.available ? `${probe.resolved} — ${probe.summary}` : `command not found: ${providerDefinition.command}` })
-  if (!probe.available) errors.push(`TTS provider "${providerId}" is not installed or not executable (${providerDefinition.command})`)
+  const providerCommand = options.providerCommand || providerDefinition.command
+  const probe = (deps.probeCommand ?? probeCommand)(providerCommand, providerDefinition.versionArgs)
+  checks.push({ id: 'provider.installed', status: probe.available ? 'PASS' : 'FAIL', detail: probe.available ? `${probe.resolved} — ${probe.summary}` : `command not found or failed: ${providerCommand}` })
+  if (!probe.available) errors.push(`TTS provider "${providerId}" is not installed or not executable (${providerCommand})`)
 
   const hardware = (deps.hardwareGpu ?? (() => {
     const result = runBounded('nvidia-smi', ['--query-gpu=name,memory.free', '--format=csv,noheader,nounits'], { timeoutMs: 6000 })
@@ -178,6 +194,12 @@ export function runAudioPreflight(options = {}, deps = {}) {
   let device
   if (providerDefinition.device === 'cpu' || providerDefinition.device === 'network') {
     device = { kind: providerDefinition.device, verified: true, source: 'provider-definition', detail: `${providerId} runs on ${providerDefinition.device}` }
+  } else if (providerId === 'omnivoice' && options.requireGpu === true && probe.available) {
+    const python = path.join(path.dirname(path.resolve(probe.resolved)), 'python')
+    const result = (deps.runBounded ?? runBounded)(python, ['-c', 'import torch; assert torch.cuda.is_available(), "CUDA unavailable"; print("CUDA: " + torch.cuda.get_device_name(0))'], { timeoutMs: options.timeoutMs ?? 30_000, retries: 0 })
+    const identity = (result.stdout ?? '').trim()
+    const verified = result.ok === true && /^CUDA:\s*\S.+/i.test(identity) && !/\b(?:cpu|unavailable|disabled|false)\b/i.test(identity)
+    device = { kind: 'cuda', verified, source: python, detail: verified ? identity : (result.stderr || identity || result.errorCode || 'CUDA probe failed').trim() }
   } else if (typeof options.deviceProbeCommand === 'string' && options.deviceProbeCommand.length > 0) {
     const deviceProbe = (deps.probeCommand ?? probeCommand)(options.deviceProbeCommand, [], { timeoutMs: options.timeoutMs ?? 30_000 })
     const expected = typeof options.deviceProbeExpect === 'string' && options.deviceProbeExpect.length > 0 ? options.deviceProbeExpect : undefined
@@ -194,9 +216,10 @@ export function runAudioPreflight(options = {}, deps = {}) {
     }
   }
   checks.push({ id: 'device.verified', status: device.verified ? 'PASS' : 'UNVERIFIED', detail: device.detail })
-  if (device.kind === 'cpu' && options.requireGpu === true) {
-    errors.push(`provider "${providerId}" is CPU-only and --require-gpu was set; refusing a silent CPU fallback`)
+  if ((device.kind === 'cpu' || device.kind === 'network') && options.requireGpu === true) {
+    errors.push(`provider "${providerId}" is ${device.kind === 'cpu' ? 'CPU-only' : 'network-based'} and --require-gpu was set; refusing a silent CPU fallback`)
   } else if (!device.verified && options.requireGpu === true) {
+    if ((deps.sandboxGpuHidden ?? sandboxGpuHidden)()) errors.push('GPU is hidden by the sandbox: host NVIDIA hardware is present but GPU device nodes are not visible; see docs/dsh.md')
     errors.push('--require-gpu was set but the provider device could not be verified; refusing to synthesize on an unknown backend')
   } else if (!device.verified) {
     warnings.push(`device verification is ${device.kind}; pass --require-gpu only when it can be verified`)
@@ -240,7 +263,7 @@ export function runAudioPreflight(options = {}, deps = {}) {
       const outputDir = options.outputDir ?? fs.mkdtempSync(path.join(os.tmpdir(), 'audio-preflight-'))
       fs.mkdirSync(outputDir, { recursive: true })
       const output = path.join(outputDir, `sample${providerDefinition.outputExtension}`)
-      const command = providerDefinition.synthesize({ output, text, voice: options.voice })
+      const command = providerDefinition.synthesize({ output, text, voice: options.voice, voiceReference: options.voiceReference, language: options.language, requireGpu: options.requireGpu })
       const result = (deps.synthesize ?? ((spec) => ({
         provider: providerId,
         ...runBounded(spec.command, spec.args, {
@@ -249,7 +272,7 @@ export function runAudioPreflight(options = {}, deps = {}) {
           input: spec.input,
           retryOn: (attempt) => attempt.timedOut || attempt.errorCode !== undefined,
         }),
-      })))({ command: providerDefinition.command, args: command.args, input: command.input, output, text, voice: options.voice })
+      })))({ command: probe.resolved || providerCommand, args: command.args, input: command.input, output, text, voice: options.voice })
       const analysis = analyzeAudioFile(output, deps)
       const loudnessVerified = analysis.loudness?.ok === true && Number.isFinite(analysis.loudness.maxVolume)
       const pass = result.ok !== false && analysis.ok && loudnessVerified
@@ -277,7 +300,7 @@ export function runAudioPreflight(options = {}, deps = {}) {
   return {
     schemaVersion: 1,
     checkedAt: new Date().toISOString(),
-    provider: { id: providerId, command: providerDefinition.command, probe },
+    provider: { id: providerId, command: providerCommand, probe },
     hardware: { gpu: hardware },
     device,
     voice: options.voice ?? null,
@@ -306,6 +329,8 @@ function parseArgs(argv) {
     else if (value === '--synthesize-sample') args.synthesizeSample = true
     else if (value === '--require-gpu') args.requireGpu = true
     else if (value === '--provider') args.provider = take()
+    else if (value === '--provider-command') args.providerCommand = take()
+    else if (value === '--language') args.language = take()
     else if (value === '--voice') args.voice = take()
     else if (value === '--voice-reference') args.voiceReference = take()
     else if (value === '--sample-text') args.sampleText = take()

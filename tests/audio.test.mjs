@@ -92,6 +92,64 @@ test('a missing provider fails before any sample is attempted', () => {
   assert.equal(result.sample.status, 'FAIL')
 })
 
+test('OmniVoice uses its selected executable, sibling CUDA probe, and real inference arguments', (t) => {
+  const dir = temp(t)
+  const reference = path.join(dir, 'voice.wav')
+  fs.writeFileSync(reference, 'reference')
+  let spec
+  let pythonProbe
+  const command = '/venv/bin/omnivoice-infer'
+  const result = runAudioPreflight({
+    provider: 'omnivoice', providerCommand: command, voiceReference: reference,
+    language: 'vi', requireGpu: true, synthesizeSample: true, outputDir: dir, sampleText: 'Xin chào.',
+  }, deps({
+    probeCommand: (name, args) => {
+      assert.equal(name, command)
+      assert.deepEqual(args, ['--help'])
+      return { available: true, resolved: command, summary: 'usage' }
+    },
+    runBounded: (name, args) => {
+      pythonProbe = { name, args }
+      return { ok: true, stdout: 'CUDA: NVIDIA GeForce RTX 3060\n' }
+    },
+    synthesize: (value) => {
+      spec = value
+      fs.writeFileSync(value.output, 'sample')
+      return { ok: true, attempts: [] }
+    },
+  }))
+  assert.equal(result.status, 'PASS', result.errors.join('\n'))
+  assert.equal(result.device.verified, true)
+  assert.equal(pythonProbe.name, '/venv/bin/python')
+  assert.equal(pythonProbe.args[0], '-c')
+  assert.match(pythonProbe.args[1], /torch\.cuda\.is_available/)
+  assert.equal(spec.command, command)
+  assert.deepEqual(spec.args, ['--text', 'Xin chào.', '--output', path.join(dir, 'sample.wav'),
+    '--ref_audio', reference, '--language', 'vi', '--device', 'cuda'])
+})
+
+test('OmniVoice refuses a failed sibling CUDA probe and diagnoses hidden GPU devices', () => {
+  let synthesized = false
+  const result = runAudioPreflight({ provider: 'omnivoice', requireGpu: true, synthesizeSample: true }, deps({
+    runBounded: () => ({ ok: false, stdout: '', stderr: 'CUDA unavailable' }),
+    sandboxGpuHidden: () => true,
+    synthesize: () => { synthesized = true },
+  }))
+  assert.equal(result.status, 'FAIL')
+  assert.equal(result.device.verified, false)
+  assert.equal(synthesized, false)
+  assert.match(result.errors.join('\n'), /GPU is hidden by the sandbox.*docs\/dsh\.md/)
+})
+
+test('OmniVoice does not accept an empty CUDA device identity', () => {
+  const result = runAudioPreflight({ provider: 'omnivoice', requireGpu: true }, deps({
+    runBounded: () => ({ ok: true, stdout: 'CUDA: \n' }),
+    sandboxGpuHidden: () => false,
+  }))
+  assert.equal(result.device.verified, false)
+  assert.equal(result.status, 'FAIL')
+})
+
 test('targeted segment audit preserves numbers and operators and catches omissions', () => {
   const good = auditSegmentText({
     segments: [{

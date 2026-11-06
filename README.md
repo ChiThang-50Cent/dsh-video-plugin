@@ -23,7 +23,7 @@ The 0.5 line makes narration quality a real evidence-based gate, adds a meaning-
 
 2. Extract this ZIP to `video-studio`, enter it and optionally `git init`.
 
-3. Run `node scripts/preflight.mjs` to inspect render/audio tools. Preflight installs nothing and does not treat a GPU as a ready TTS backend.
+3. Run `node scripts/preflight.mjs` to inspect render/audio tools and the execution environment's GPU visibility and encoder recommendation. Preflight installs nothing and does not treat GPU hardware as a ready TTS backend. For optional GPU access inside DSH, configure the home-level sandbox runner and verify it as described in [GPU inside the DSH sandbox](docs/dsh.md#gpu-inside-the-dsh-sandbox); review the security and reversion instructions first.
 
 4. Install the bundle from the Web **Plugins** page (local path) or with `plugin_manager` `action: install_bundle`. The bundle applies `cordis.patch.yml` and shows `Video studio presets`.
 

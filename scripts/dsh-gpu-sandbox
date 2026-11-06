@@ -1,0 +1,26 @@
+#!/bin/sh
+# Preserve the sandbox profile while exposing only existing GPU device nodes.
+root=${DSH_GPU_SANDBOX_DEV_ROOT:-/dev}
+bwrap=${DSH_GPU_SANDBOX_BWRAP:-bwrap}
+count=$#
+found=false
+while [ "$count" -gt 0 ]; do
+    arg=$1
+    shift
+    if [ "$arg" = -- ] && [ "$found" = false ]; then
+        found=true
+        for node in "$root"/nvidia[0-9]* "$root"/nvidiactl "$root"/nvidia-uvm "$root"/nvidia-uvm-tools "$root"/nvidia-modeset "$root"/nvidia-caps "$root"/dri; do
+            [ -e "$node" ] || continue
+            set -- "$@" --dev-bind-try "$node" "$node"
+        done
+        set -- "$@" --
+    else
+        set -- "$@" "$arg"
+    fi
+    count=$((count - 1))
+done
+if [ "$found" = false ]; then
+    echo 'bwrap: missing argument separator --' >&2
+    exit 1
+fi
+exec "$bwrap" "$@"

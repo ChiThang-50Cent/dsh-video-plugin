@@ -20,10 +20,13 @@ Before batch synthesis, run:
 
 ```bash
 node <studio>/scripts/audio-preflight.mjs --provider <id> --voice <id> \
-  --voice-reference <wav> --synthesize-sample [--require-gpu] [--json]
+  [--provider-command <absolute-path-to-provider>] --voice-reference <wav> \
+  --synthesize-sample [--require-gpu] [--json]
 ```
 
 - `nvidia-smi` proves hardware, not that the TTS provider uses it. Provider/device readiness is verified by the configured device probe **and** a short sample. If `--require-gpu` cannot be verified, stop; never silently run CPU for a long batch.
+- For OmniVoice, select `--provider omnivoice` and, if its virtual environment is not on PATH, pass `--provider-command /path/to/venv/bin/omnivoice-infer`. With `--require-gpu`, the sample uses `--device cuda` and the provider's sibling Python must affirm a GPU identity. If the sandbox hides the GPU, follow `docs/dsh.md` at the studio code root.
+- `omnivoice-infer-batch` has no device flag. Batch synthesis is allowed only after this GPU preflight passes in the same execution context; the batch adapter must assert Torch CUDA availability before synthesizing. Never silently fall back to CPU.
 - Inspect the voice reference for readability, duration, sample rate, silence and clipping. Language/timbre suitability still needs listening.
 - Run TTS/ASR through bounded jobs with a timeout and explicit retry policy (`scripts/lib/bounded.mjs`). Do not retry forever or hide a failure.
 - Record provider, command/version, device, voice/model, settings, sample path/result and environment in `audio/manifest.json`.

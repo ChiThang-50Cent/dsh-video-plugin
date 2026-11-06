@@ -43,6 +43,36 @@ The package `files` list includes only public library payload: catalog, default 
 - A preset card with an invalid child config still mounts as a plugin but appears as **Failed to load**; `agentPresets/list` exposes the reason.
 - Do not both install the bundle and pass `--patch cordis.patch.yml` to the same runtime; duplicate preset ids fail declaration loading.
 
+## GPU inside the DSH sandbox
+
+The optional GPU runner exposes existing GPU device nodes to sandboxed commands. Add or merge the following row into the home-level `$DSH_HOME/cordis.patch.yml` (use the absolute path to the installed bundle's script, not the workspace data root):
+
+```yaml
+- id: sandbox
+  name: '@deepseek-ai/dsh-sandbox-local'
+  config:
+    runnerCommand: ['/absolute/path/to/installed/video-studio/scripts/dsh-gpu-sandbox']
+    runnerFailureSignatures: ['bwrap: ']
+    probeTimeoutMs: 5000
+```
+
+Keep any other existing home patch rows and sandbox configuration you need. Restart DSH so the patch takes effect. The runner requires `bwrap` on PATH and forwards the sandbox profile and command while exposing only existing GPU device nodes; it does not add filesystem binds.
+
+Verify from a command executed **inside the same DSH sandbox context** as the intended workload:
+
+```bash
+node /absolute/path/to/installed/video-studio/scripts/preflight.mjs --json
+node /absolute/path/to/installed/video-studio/scripts/audio-preflight.mjs \
+  --provider omnivoice --provider-command /absolute/path/to/venv/bin/omnivoice-infer \
+  --voice-reference /absolute/path/to/voice.wav --synthesize-sample --require-gpu --json
+```
+
+The GPU section distinguishes `available`, `absent` and `hidden-by-sandbox`; host hardware evidence alone is not provider readiness. The recommended encoder is `h264_nvenc` only after a real NVENC encode passes, otherwise `libx264` with a reason. An optional `--python /path/to/python` checks that interpreter's Torch CUDA availability. For speech, require the provider's verified GPU identity and a passing sample; use a suitable voice reference and listen for quality.
+
+`omnivoice-infer-batch` has no device flag. Run it only after the GPU audio preflight passes in the same execution context, and require the batch adapter to assert Torch CUDA availability before synthesis. Do not silently fall back to CPU.
+
+**Security:** this grants sandboxed commands access to GPU devices, with the associated device/driver attack surface and shared GPU resources. It does not change the sandbox filesystem policy. To revert, remove the added row or restore the prior `sandbox` row and its configuration in `$DSH_HOME/cordis.patch.yml`, then restart DSH. Re-run preflight in the sandbox to check the resulting visibility.
+
 ## Test protocol
 
 1. Use the exact pinned DSH version in a dedicated workspace. Run `node scripts/preflight.mjs`.

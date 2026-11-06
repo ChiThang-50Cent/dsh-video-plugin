@@ -5,7 +5,7 @@
 - **DSH plugins**: executable capabilities and Agent Presets. DSH owns models, context, shell, skills, delegation, permissions and session persistence.
 - **DSH skills**: procedural instructions loaded selectively. They are not processes, renderers or substitutes for subagents.
 - **Video project**: immutable sources, production mode, narration/review evidence, shot plans, audio, scene data and QA for one series/episode.
-- **Adapters**: installed and verified render/TTS tools. FFmpeg is the minimal delivery/mixing backend; Remotion, browser SVG/Canvas, Blender or others are opt-in. No engine is assumed.
+- **Adapters**: installed and verified render/TTS tools. FFmpeg is the minimal delivery/mixing backend; Remotion, browser SVG/Canvas, Blender or others are opt-in. No engine is assumed. Use the execution-context preflight's real-encode recommendation for final encoding and report CPU encoding with its reason; GPU hardware evidence alone does not verify a TTS provider.
 
 ## 2. Workflow
 
