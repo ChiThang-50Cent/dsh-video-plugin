@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "name": "Untitled series",
   "slug": "example-series",
-  "style": "../../library/styles/default.json",
+  "visualStyle": "default",
   "episodesDir": "episodes",
   "renderer": "skia-canvas",
   "tts": "auto",

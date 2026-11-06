@@ -21,12 +21,28 @@ Before batch synthesis, run:
 ```bash
 node <studio>/scripts/audio-preflight.mjs --provider <id> --voice <id> \
   [--provider-command <absolute-path-to-provider>] --voice-reference <wav> \
+  [--model <checkpoint-dir|repo>] [--ref-text <exact reference transcript>] \
   --synthesize-sample [--require-gpu] [--json]
 ```
 
 - `nvidia-smi` proves hardware, not that the TTS provider uses it. Provider/device readiness is verified by the configured device probe **and** a short sample. If `--require-gpu` cannot be verified, stop; never silently run CPU for a long batch.
 - For OmniVoice, select `--provider omnivoice` and, if its virtual environment is not on PATH, pass `--provider-command /path/to/venv/bin/omnivoice-infer`. With `--require-gpu`, the sample uses `--device cuda` and the provider's sibling Python must affirm a GPU identity. If the sandbox hides the GPU, follow `docs/dsh.md` at the studio code root.
-- `omnivoice-infer-batch` has no device flag. Batch synthesis is allowed only after this GPU preflight passes in the same execution context; the batch adapter must assert Torch CUDA availability before synthesizing. Never silently fall back to CPU.
+- Offline OmniVoice (`HF_HUB_OFFLINE=1`) needs `--model <local snapshot dir>` (a cached HF repo id without `refs/main` cannot resolve) and `--ref-text` with the exact transcript of the voice reference (otherwise the CLI loads a Whisper model to transcribe it). Never wrap the provider in an ad-hoc shell adapter for this.
+
+## Batch synthesis
+
+After the preflight passes, synthesize the whole `audio/segments.json` with one long-lived process that loads the model once:
+
+```bash
+node <studio>/scripts/synthesize-narration.mjs <episode> \
+  --python /path/to/venv/bin/python --model <checkpoint-dir> \
+  --voice-reference <wav> --ref-text "<exact transcript>" --language vi \
+  --require-gpu [--timeout-ms 120000] [--overall-timeout-ms 3600000] [--retries 1]
+```
+
+- It refuses segments whose `narrationSha256` differs from `narration.md`, refuses a helper that loads on CPU when CUDA was requested, and kills a segment that exceeds its timeout, retrying with a fresh helper within `--retries`.
+- It writes `audio/manifest.json` (`chunks[]` with `segmentId`, `path`, `sha256`, `durationSec`, `fingerprint`) after every segment. A rerun skips segments whose text, model, voice and file hash are unchanged, so an interrupted batch resumes and a revised paragraph re-synthesizes only its segments.
+- Do not write per-segment shell loops around `omnivoice-infer`: each process reloads the model (about 5 s per call on an RTX 3060).
 - Inspect the voice reference for readability, duration, sample rate, silence and clipping. Language/timbre suitability still needs listening.
 - Run TTS/ASR through bounded jobs with a timeout and explicit retry policy (`scripts/lib/bounded.mjs`). Do not retry forever or hide a failure.
 - Record provider, command/version, device, voice/model, settings, sample path/result and environment in `audio/manifest.json`.

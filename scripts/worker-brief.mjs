@@ -6,6 +6,7 @@ import { pathToFileURL } from 'node:url'
 import { codeRoot, resolveDataRoot, resolveStudioPaths } from './studio-paths.mjs'
 import { validateWorkerPlan } from './validate-workers.mjs'
 import { workerContract } from './lib/worker-brief-contract.mjs'
+import { resolveVisualStyle } from './lib/render/theme.mjs'
 
 const safeId = value => typeof value === 'string' && /^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(value) && value !== '.' && value !== '..'
 const stable = value => Array.isArray(value) ? value.map(stable) : value && typeof value === 'object' ? Object.fromEntries(Object.keys(value).sort().map(key => [key, stable(value[key])])) : value
@@ -28,9 +29,7 @@ export function generateWorkerBrief(episode, options = {}) {
   }
   const projectDir = path.resolve(root, '../..')
   const project = json(path.join(projectDir, 'project.json'), 'project.json')
-  if (typeof project.style !== 'string' || !project.style) throw new Error('project.json style is required')
-  const stylePath = path.resolve(projectDir, project.style)
-  const style = json(stylePath, 'project style')
+  const visualStyle = resolveVisualStyle({ episodeRoot: root })
   const production = json(path.join(root, 'production.json'), 'production.json')
   if (!['narrated', 'mixed', 'silent', 'text-only'].includes(production.mode)) throw new Error('production.json mode is required')
   const storyboard = json(path.join(root, 'storyboard.json'), 'storyboard.json')
@@ -65,7 +64,7 @@ export function generateWorkerBrief(episode, options = {}) {
   const work = `work/${options.task}`
   const blocks = {
     studio: workerContract,
-    episode: block('Episode context', { roots, episodeDir: root, projectDir, production, style: { path: stylePath, value: style, references: styleRefs }, sharedAssets: assets, waveId: wave }),
+    episode: block('Episode context', { roots, episodeDir: root, projectDir, production, visualStyle: { id: visualStyle.id, source: visualStyle.source, sha256: visualStyle.sha256, path: visualStyle.file, tokens: visualStyle.style, usage: 'Scenes read these tokens at render time from api.theme; never hard-code colours or fonts or register fonts in scene code.' }, narrationStyleRefs: styleRefs, sharedAssets: assets, waveId: wave }),
     scene: block('Scene assignment', { sceneId: options.scene, sceneJson: scene, measuredTiming: timing, narrationSegments: segments, reuseSource: scene.reuseFrom ?? null, taskId: options.task, workDir: work, allowlist: [`${work}/**`], outputPaths: { result: `${work}/scene-result.json`, code: `${work}/scene.mjs`, preview: `${work}/scene.mp4`, qaReport: `${work}/qa.json` } }),
   }
   return { brief: blocks.studio + blocks.episode + blocks.scene, blocks, hashes: Object.fromEntries(Object.entries(blocks).map(([key, text]) => [key, digest(text)])) }

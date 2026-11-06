@@ -160,7 +160,7 @@ export const rootResolution = resolved
 /** Effective paths for this process. */
 export const paths = resolveStudioPaths(dataRoot)
 
-const LIBRARY_DIRS = ['scenes', 'templates', 'styles']
+const LIBRARY_DIRS = ['scenes', 'templates', 'styles', 'visual-styles']
 
 function copyMissing(source, destination) {
   if (!fs.existsSync(source)) return []
@@ -218,8 +218,9 @@ export function ensureWorkspace(options = {}) {
   if (withBuiltins && data !== code && fs.existsSync(builtin)) {
     // Copy style packages, but never copy a catalog whose scene/template files
     // were not copied: that would leave entries pointing at missing files.
-    const styles = path.join(builtin, 'styles')
-    copiedFiles.push(...copyMissing(styles, path.join(data, 'library', 'styles')))
+    for (const dir of ['styles', 'visual-styles']) {
+      copiedFiles.push(...copyMissing(path.join(builtin, dir), path.join(data, 'library', dir)))
+    }
   }
 
   const catalog = path.join(data, 'library', 'catalog.json')

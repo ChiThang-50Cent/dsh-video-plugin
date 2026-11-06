@@ -75,15 +75,15 @@ test('external data root wins over the working directory and is idempotent', (t)
   const firstReport = JSON.parse(first.stdout)
   assert.equal(firstReport.dataRoot, data)
   assert.ok(firstReport.created.length > 0)
-  assert.ok(fs.existsSync(path.join(data, 'library', 'styles', 'default.json')))
+  assert.ok(fs.existsSync(path.join(data, 'library', 'visual-styles', 'default', 'style.json')))
   assert.ok(fs.existsSync(path.join(data, 'library', 'catalog.json')))
 
-  fs.writeFileSync(path.join(data, 'library', 'styles', 'default.json'), '{"schemaVersion":1,"id":"local"}\n')
+  fs.writeFileSync(path.join(data, 'library', 'visual-styles', 'default', 'style.json'), '{"schemaVersion":1,"id":"local"}\n')
   const second = run('init-workspace.mjs', ['--json'], { cwd: elsewhere, env })
   assert.equal(second.status, 0, second.stderr)
   const secondReport = JSON.parse(second.stdout)
   assert.equal(secondReport.created.length, 0)
-  assert.equal(fs.readFileSync(path.join(data, 'library', 'styles', 'default.json'), 'utf8'), '{"schemaVersion":1,"id":"local"}\n')
+  assert.equal(fs.readFileSync(path.join(data, 'library', 'visual-styles', 'default', 'style.json'), 'utf8'), '{"schemaVersion":1,"id":"local"}\n')
 
   const created = run('new-episode.mjs', ['external-series', 'ep-001'], { cwd: elsewhere, env })
   assert.equal(created.status, 0, created.stderr)
@@ -195,7 +195,7 @@ test('a clean npm package initializes its library and resolves built-in styles',
     'package/scripts/init-workspace.mjs',
     'package/scripts/lib/narration-integrity.mjs',
     'package/library/catalog.json',
-    'package/library/styles/default.json',
+    'package/library/visual-styles/default/style.json',
     'package/library/styles/indeterminate-forms/style.json',
     'package/library/styles/indeterminate-forms/notes.md',
     'package/library/styles/indeterminate-forms/reference.external.md',
@@ -215,7 +215,7 @@ test('a clean npm package initializes its library and resolves built-in styles',
 
   const init = spawnSync(process.execPath, [path.join(packageRoot, 'scripts', 'init-workspace.mjs'), '--data-root', data], { cwd: elsewhere, encoding: 'utf8' })
   assert.equal(init.status, 0, init.stderr)
-  assert.ok(fs.existsSync(path.join(data, 'library', 'styles', 'default.json')))
+  assert.ok(fs.existsSync(path.join(data, 'library', 'visual-styles', 'default', 'style.json')))
   assert.ok(fs.existsSync(path.join(data, 'library', 'styles', 'indeterminate-forms', 'notes.md')))
   assert.equal(fs.existsSync(path.join(data, 'library', 'styles', 'indeterminate-forms', 'reference.vi.md')), false)
 

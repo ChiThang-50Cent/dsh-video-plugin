@@ -52,6 +52,23 @@ test('metadata QA is separate from optional quality QA', (t) => {
   assert.ok(quality.checks.quality.checks.some((check) => check.id === 'audio.clipping'))
 })
 
+test('loudness checks integrated and true peak limits including boundaries', (t) => {
+  const dir = temp(t)
+  const video = path.join(dir, 'tone.mp4')
+  assert.equal(spawnSync('ffmpeg', ['-v', 'error', '-f', 'lavfi', '-i', 'color=s=64x64:d=2',
+    '-f', 'lavfi', '-i', 'sine=duration=2', '-c:v', 'mpeg4', '-c:a', 'aac', '-y', video]).status, 0)
+  const initial = qaMedia(video).checks.loudness
+  assert.equal(initial.status, 'FAIL')
+  const i = initial.measuredIntegratedLufs
+  const p = initial.measuredTruePeakDbtp
+  assert.ok(Number.isFinite(i) && Number.isFinite(p) && Number.isFinite(initial.measuredLra))
+  const check = (target) => qaMedia(video, { loudness: target }).checks.loudness.status
+  assert.equal(check({ integratedLufs: i + 2, truePeakDbtp: p - 0.5, toleranceLu: 2 }), 'PASS')
+  assert.equal(check({ integratedLufs: i + 2.1, truePeakDbtp: p, toleranceLu: 2 }), 'FAIL')
+  assert.equal(check({ integratedLufs: i - 2.1, truePeakDbtp: p, toleranceLu: 2 }), 'FAIL')
+  assert.equal(check({ integratedLufs: i, truePeakDbtp: p - 0.6, toleranceLu: 2 }), 'FAIL')
+})
+
 test('narration lint flags filler, visual deixis, raw LaTeX and the algebra anti-patterns without claiming G0', () => {
   const parsed = parseNarration('# Mở\n\nNhư bạn thấy, rõ ràng đây là một điều rất đơn giản. Ta có $\\frac{1}{2}$ trong câu nói.\n')
   const result = lintParsed(parsed)

@@ -140,21 +140,49 @@ function overlapOf(intervals) {
   }
 }
 
+function cacheHitRatio(input, read, write) {
+  if ([input, read, write].some((value) => value === null) || input + read + write === 0) return null
+  return read / (input + read + write)
+}
+
 function assistantUsage(events) {
   const messages = events.filter((event) => event.type === 'assistant/message')
-  const sumAliases = (keys) => {
-    const values = messages.map((event) => keys.map((key) => event.data?.usage?.[key]).find((value) => Number.isFinite(value)))
+  const sumAliases = (keys, cache = false) => {
+    const values = messages.map((event) => {
+      const usage = event.data?.usage
+      const value = keys.map((key) => usage?.[key]).find(Number.isFinite)
+      return value ?? (cache && Number.isFinite(usage?.inputTokens) && Number.isFinite(usage?.outputTokens) ? 0 : undefined)
+    })
     return values.length > 0 && values.every((value) => value !== undefined) ? values.reduce((total, value) => total + value, 0) : null
   }
-  const cacheFields = ['cacheReadTokens', 'cachedInputTokens', 'cache_read_input_tokens']
-  const writeFields = ['cacheWriteTokens', 'cacheCreationInputTokens', 'cache_creation_input_tokens']
+  const inputTokens = sumAliases(['inputTokens'])
+  const cachedReadTokens = sumAliases(['cacheReadTokens', 'cachedInputTokens', 'cache_read_input_tokens'], true)
+  const cachedWriteTokens = sumAliases(['cacheWriteTokens', 'cacheCreationInputTokens', 'cache_creation_input_tokens'], true)
+  const recorded = messages.filter((event) => Number.isFinite(event.data?.usage?.inputTokens) && Number.isFinite(event.data?.usage?.outputTokens))
+  const observed = recorded.reduce((totals, event) => {
+    const usage = event.data.usage
+    const read = ['cacheReadTokens', 'cachedInputTokens', 'cache_read_input_tokens'].map((key) => usage[key]).find(Number.isFinite) ?? 0
+    const write = ['cacheWriteTokens', 'cacheCreationInputTokens', 'cache_creation_input_tokens'].map((key) => usage[key]).find(Number.isFinite) ?? 0
+    totals.inputTokens += usage.inputTokens
+    totals.outputTokens += usage.outputTokens
+    totals.cachedReadTokens += read
+    totals.cachedWriteTokens += write
+    totals.totalTokens += Number.isFinite(usage.totalTokens) ? usage.totalTokens : usage.inputTokens + usage.outputTokens + read + write
+    return totals
+  }, { calls: recorded.length, inputTokens: 0, outputTokens: 0, totalTokens: 0, cachedReadTokens: 0, cachedWriteTokens: 0 })
+  observed.cacheHitRatio = cacheHitRatio(observed.inputTokens, observed.cachedReadTokens, observed.cachedWriteTokens)
+  const missingUsage = messages.filter((event) => !Number.isFinite(event.data?.usage?.inputTokens) || !Number.isFinite(event.data?.usage?.outputTokens))
+    .map((event) => ({ turn: event.data?.turn ?? null, step: event.data?.step ?? null, messageId: event.data?.message?.id ?? null, interrupted: event.data?.interrupted === true }))
   return {
     calls: messages.length,
-    inputTokens: sumAliases(['inputTokens']),
+    inputTokens,
     outputTokens: sumAliases(['outputTokens']),
-    totalTokens: sumAliases(['totalTokens']),
-    cachedReadTokens: sumAliases(cacheFields),
-    cachedWriteTokens: sumAliases(writeFields),
+    totalTokens: recorded.length === messages.length && messages.length > 0 ? observed.totalTokens : null,
+    cachedReadTokens,
+    cachedWriteTokens,
+    cacheHitRatio: cacheHitRatio(inputTokens, cachedReadTokens, cachedWriteTokens),
+    observed,
+    missingUsage,
     models: [...new Set(messages.map((event) => `${event.data?.message?.source?.provider ?? 'unknown'}/${event.data?.message?.source?.model ?? 'unknown'}`))],
   }
 }
@@ -373,9 +401,14 @@ export function collectMetrics(options = {}) {
     return active.length > 0 && active.every((session) => session.model[key] !== null)
       ? active.reduce((total, session) => total + session.model[key], 0) : null
   }
+  const observed = perSession.reduce((total, session) => {
+    for (const key of ['calls', 'inputTokens', 'outputTokens', 'totalTokens', 'cachedReadTokens', 'cachedWriteTokens']) total[key] += session.model.observed[key]
+    return total
+  }, { calls: 0, inputTokens: 0, outputTokens: 0, totalTokens: 0, cachedReadTokens: 0, cachedWriteTokens: 0 })
+  observed.cacheHitRatio = cacheHitRatio(observed.inputTokens, observed.cachedReadTokens, observed.cachedWriteTokens)
   const latencySamples = perSession.reduce((total, session) => total + session.modelLatency.samples, 0)
   const unavailable = []
-  for (const key of ['inputTokens', 'outputTokens', 'totalTokens', 'cachedReadTokens', 'cachedWriteTokens']) {
+  for (const key of ['inputTokens', 'outputTokens']) {
     if (sumModel(key) === null) unavailable.push(`${key} counters were not present for every model call`)
   }
   if (latencySamples === 0) unavailable.push('model latency could not be measured from event timestamps')
@@ -413,6 +446,9 @@ export function collectMetrics(options = {}) {
       totalTokens: sumModel('totalTokens'),
       cachedReadTokens: sumModel('cachedReadTokens'),
       cachedWriteTokens: sumModel('cachedWriteTokens'),
+      cacheHitRatio: cacheHitRatio(sumModel('inputTokens'), sumModel('cachedReadTokens'), sumModel('cachedWriteTokens')),
+      observed,
+      missingUsage: perSession.flatMap((session) => session.model.missingUsage.map((call) => ({ sessionId: session.sessionId, ...call }))),
       turns: perSession.reduce((total, session) => total + session.turns, 0),
       steps: perSession.reduce((total, session) => total + session.steps, 0),
       toolCalls: perSession.reduce((total, session) => total + session.tools.calls, 0),
@@ -486,6 +522,10 @@ function main() {
     console.log(`  sessions: ${metrics.aggregate.sessionCount} (${metrics.aggregate.workerSessions} worker)`)
     console.log(`  wall clock: ${(metrics.aggregate.wallClockMs / 1000).toFixed(1)}s, tool: ${(metrics.aggregate.toolExecutionMs / 1000).toFixed(1)}s, model: ${metrics.aggregate.modelLatencyMs === null ? 'unavailable' : `${(metrics.aggregate.modelLatencyMs / 1000).toFixed(1)}s`}`)
     console.log(`  tokens: ${metrics.aggregate.totalTokens} total, cached read ${metrics.aggregate.cachedReadTokens ?? 'unavailable'}`)
+    console.log(`  cache hit ratio: ${metrics.aggregate.cacheHitRatio === null ? 'unavailable' : `${(metrics.aggregate.cacheHitRatio * 100).toFixed(2)}%`}`)
+    for (const session of metrics.sessions) console.log(`  ${session.sessionId} cache hit ratio: ${session.model.cacheHitRatio === null ? 'unavailable' : `${(session.model.cacheHitRatio * 100).toFixed(2)}%`}; observed subtotal (${session.model.observed.calls} calls): ${session.model.observed.cacheHitRatio === null ? 'unavailable' : `${(session.model.observed.cacheHitRatio * 100).toFixed(2)}%`}`)
+    console.log(`  observed subtotal (${metrics.aggregate.observed.calls} calls with input/output): input ${metrics.aggregate.observed.inputTokens}, output ${metrics.aggregate.observed.outputTokens}, cache read ${metrics.aggregate.observed.cachedReadTokens}, cache write ${metrics.aggregate.observed.cachedWriteTokens}, hit ratio ${metrics.aggregate.observed.cacheHitRatio === null ? 'unavailable' : `${(metrics.aggregate.observed.cacheHitRatio * 100).toFixed(2)}%`}`)
+    for (const call of metrics.aggregate.missingUsage) console.log(`  missing usage: ${call.sessionId} turn ${call.turn} step ${call.step} message ${call.messageId} interrupted ${call.interrupted}`)
     console.log(`  image reads: ${metrics.aggregate.imageReads}, retries: ${metrics.aggregate.retries}, failed jobs: ${metrics.aggregate.failedJobs}`)
     console.log(`  max concurrent workers: ${metrics.aggregate.concurrency.maxConcurrentWorkers}; max delegation depth: ${metrics.aggregate.delegationDepthMax}`)
   }

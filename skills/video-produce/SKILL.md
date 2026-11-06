@@ -9,7 +9,7 @@ You are the ONE accountable producer. A skill is a procedure, not another agent.
 
 ## Contract
 
-1. Read `AGENTS.md` at the studio code root named in each skill header, the project `project.json`/style and `production.json`. Use `video-intake` to normalize the natural-language request; do not ask for facts the source already supplies.
+1. Read `AGENTS.md` at the studio code root named in each skill header, the project `project.json` (series `visualStyle`, `styleRefs`) and `production.json` (episode `visualStyle` override). Use `video-intake` to normalize the natural-language request; do not ask for facts the source already supplies. A request to change the look ("đổi style", "đổi giao diện", "làm theo video này") is a visual-style change per `video-workspace`, not a scene rewrite.
 2. Create `request.md` and `execution-brief.md` in a NEW episode. Choose `draft-only`/`produce` and the production mode: `narrated`, `silent`, `text-only` or `mixed`. Silent/text-only modes must **not** create fake narration; they use visual/audio QA instead.
 3. **Narration first, two gates.** For narrated/mixed, invoke `video-narration`: through-line map → continuous draft → claim audit → editorial pass → independent review when risk requires it → freeze. The producer owns G0 even if a subagent wrote the draft:
    - `throughline-map.json`, `claim-check.json` (schema v2) and `narration-review.json` (schema v2) are present;
@@ -28,7 +28,7 @@ You are the ONE accountable producer. A skill is a procedure, not another agent.
    Use the built-in Skia adapter by default for code-animated 2D scenes when preflight passes; FFmpeg handles compositing and delivery. Other verified engines are opt-in. Before final encoding, run `node <studio>/scripts/preflight.mjs` in the render execution context. Skia engine and encoder are independent; explicit GPU engine requests fail if unavailable. Use `h264_nvenc` only after a real NVENC encode passes; otherwise use `libx264` and report why. GPU rendering or NVENC inside DSH requires the GPU sandbox runner. Respect the RAM guard and the libx264 thread cap and reduced scheduling priority.
 8. Release only through the strict gate:
    `node <studio>/scripts/validate-episode.mjs <episode-dir> --release`
-   It requires a real master verified by ffprobe, `qa/final.json` PASS, `qa/media.json` bound by hash, scene QA, narration/audio/timeline consistency, and no unreleased stale markers. `--lint` is only a work-in-progress structural check; never report it as delivery.
+   It requires a real master verified by ffprobe, `qa/final.json` PASS, `qa/media.json` bound by hash with loudness PASS, scene QA bound to the frozen narration SHA-256 for narrated/mixed episodes, narration/audio/timeline consistency, and no unreleased stale markers. `--lint` is only a work-in-progress structural check; never report it as delivery.
 9. Complete `reports/production-report.md` and `report.json`: measured wall time (not estimates), model/tool usage from `node <studio>/scripts/collect-metrics.mjs`, A/B/C, QA calls, retries, narration passes, blocked issues, TTS cache invalidations, final master path/hash.
 
 ## Gate rules

@@ -207,6 +207,29 @@ node -e "const {createHash}=require('node:crypto');const fs=require('node:fs');c
 
 Any edit to spoken prose makes the hash stale. Use `scripts/revise-narration.mjs` for an intentional revision; it archives and invalidates downstream artifacts instead of letting old audio survive a changed script.
 
+## Through-line map (schema v1)
+
+```json
+{
+  "schemaVersion": 1,
+  "centralQuestion": "Why does a sliding count drop when nothing new arrives?",
+  "promise": "By the end the viewer can compute a sliding count by hand at any instant.",
+  "audience": "Backend engineers who know tumbling and hopping windows",
+  "sections": [
+    {
+      "sectionId": "sec-01",
+      "purpose": "Show the surprising drop from 4 to 3.",
+      "connectionToCentralQuestion": "Poses the central question with a concrete count.",
+      "whyHere": "The hook must come before any definition.",
+      "audienceTakeaway": "A count can fall without a new event.",
+      "claimRefs": ["c01"]
+    }
+  ]
+}
+```
+
+Rules: one entry per spoken section, in narration order, each referenced by `sectionId` (or `{ "heading": "..." }`); `claimRefs` must name ids in `claim-check.json`; placeholders fail. The validator prints the expected section ids, so run it instead of reading its source.
+
 ## Claim check (schema v2)
 
 ```json

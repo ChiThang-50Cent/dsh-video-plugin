@@ -5,7 +5,7 @@ description: Map approved narration or a silent visual brief into visual beats a
 
 # Storyboard and shot design
 
-Inputs: frozen `narration.md`, `narration-review.json` with `status: "pass"` and the current hash, `throughline-map.json`, `audio/segments.json` when it exists, sources, project style, asset inventory and the scene library. **Do not rewrite the narrated story while dividing beats.**
+Inputs: frozen `narration.md`, `narration-review.json` with `status: "pass"` and the current hash, `throughline-map.json`, `audio/segments.json` when it exists, sources, the active visual style (`library/visual-styles/<id>/style.json` and `notes.md`), asset inventory and the scene library. **Do not rewrite the narrated story while dividing beats.**
 
 1. Confirm the gate: the review hash matches `narration.md` and `node <studio>/scripts/validate-narration.mjs <episode-dir>` passes. If it fails, stop and return the blocker. A plan built on a draft or stale narration is waste.
 2. Read the through-line map. Each beat inherits a section purpose/connection from it; do not invent a visual thesis that contradicts the spoken one.

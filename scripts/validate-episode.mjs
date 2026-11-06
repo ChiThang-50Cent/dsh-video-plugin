@@ -24,6 +24,7 @@ import { MODES, NARRATED_MODES, sha256File } from './lib/narration-model.mjs'
 import { findMaster, resolveProductionMode } from './lib/episode-artifacts.mjs'
 import { runBounded } from './lib/bounded.mjs'
 import { validateNarration } from './validate-narration.mjs'
+import { resolveVisualStyle } from './lib/render/theme.mjs'
 
 function readJsonFile(file, label, errors) {
   try {
@@ -267,6 +268,10 @@ export async function validateEpisode(episodeDir, options = {}) {
     if (!existsSync(mediaPath)) incomplete.push('qa/media.json is missing')
     if (media !== undefined) {
       if (media.ok !== true) releaseErrors.push('qa/media.json did not pass')
+      if (media.checks?.loudness?.status !== 'PASS'
+        && !(master?.probe?.hasAudio === false && !NARRATED_MODES.has(mode) && media.checks?.loudness?.status === 'NOT_APPLICABLE')) {
+        releaseErrors.push('qa/media.json loudness check did not pass')
+      }
       if (master !== null && media.sha256 !== undefined && String(media.sha256).toLowerCase() !== master.sha256) {
         releaseErrors.push('qa/media.json sha256 does not match the current master; QA belongs to another file')
       }
@@ -300,9 +305,26 @@ export async function validateEpisode(episodeDir, options = {}) {
     } else if (timedScenes.length !== scenes.length) {
       releaseErrors.push(`storyboard has ${scenes.length} scene(s) but timeline has ${timedScenes.length}; release needs a consistent timed scene for every storyboard scene`)
     } else {
+      let style
+      try {
+        style = resolveVisualStyle({ episodeRoot: root })
+      } catch (error) {
+        releaseErrors.push(`visual style cannot be resolved: ${error.message}`)
+      }
       for (const scene of scenes) {
         const qaPath = path.join(root, 'qa', 'scene', `${scene.id}.json`)
-        let status = existsSync(qaPath) ? String((readJsonFile(qaPath, `qa/scene/${scene.id}.json`, releaseErrors) ?? {}).status ?? '').toUpperCase() : undefined
+        const sceneQa = existsSync(qaPath) ? readJsonFile(qaPath, `qa/scene/${scene.id}.json`, releaseErrors) : undefined
+        let status = sceneQa === undefined ? undefined : String(sceneQa.status ?? '').toUpperCase()
+        if (NARRATED_MODES.has(mode)) {
+          const narrationPath = path.join(root, 'narration.md')
+          if (typeof sceneQa?.narrationSha256 !== 'string' || !existsSync(narrationPath)
+            || sceneQa.narrationSha256.toLowerCase() !== sha256File(narrationPath)) {
+            releaseErrors.push(`scene QA for ${scene.id} has missing or mismatched narrationSha256`)
+          }
+        }
+        if (style !== undefined && (typeof sceneQa?.styleSha256 !== 'string' || sceneQa.styleSha256.toLowerCase() !== style.sha256)) {
+          releaseErrors.push(`scene QA for ${scene.id} has missing or mismatched styleSha256; re-render and re-check it with visual style "${style.id}"`)
+        }
         if (status === undefined) status = sceneQaStatus(finalQa, scene.id)
         if (status === undefined) {
           incomplete.push(`scene QA missing for ${scene.id}`)

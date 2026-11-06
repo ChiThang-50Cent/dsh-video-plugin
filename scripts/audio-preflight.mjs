@@ -14,6 +14,7 @@
  * Usage:
  *   node scripts/audio-preflight.mjs --provider <id|espeak-ng|piper|edge-tts|say|omnivoice>
  *        [--provider-command <path>] [--voice <id/model>] [--voice-reference <wav>] [--language <language>]
+ *        [--model <checkpoint-dir|repo>] [--ref-text <reference transcript>]
  *        [--sample-text <text>|--sample-file <txt>] [--synthesize-sample] [--out <dir>]
  *        [--require-gpu] [--device-probe-command <cmd>] [--timeout-ms <n>] [--retries <n>] [--json]
  *
@@ -68,8 +69,9 @@ export const PROVIDER_DEFINITIONS = {
     versionArgs: ['--help'],
     device: 'unknown',
     outputExtension: '.wav',
-    synthesize: ({ output, text, voiceReference, language, requireGpu }) => ({
+    synthesize: ({ output, text, voiceReference, language, requireGpu, model, refText }) => ({
       args: ['--text', text, '--output', output, ...(voiceReference ? ['--ref_audio', voiceReference] : []),
+        ...(model ? ['--model', model] : []), ...(refText ? ['--ref_text', refText] : []),
         ...(language ? ['--language', language] : []), ...(requireGpu ? ['--device', 'cuda'] : [])],
     }),
   },
@@ -263,7 +265,7 @@ export function runAudioPreflight(options = {}, deps = {}) {
       const outputDir = options.outputDir ?? fs.mkdtempSync(path.join(os.tmpdir(), 'audio-preflight-'))
       fs.mkdirSync(outputDir, { recursive: true })
       const output = path.join(outputDir, `sample${providerDefinition.outputExtension}`)
-      const command = providerDefinition.synthesize({ output, text, voice: options.voice, voiceReference: options.voiceReference, language: options.language, requireGpu: options.requireGpu })
+      const command = providerDefinition.synthesize({ output, text, voice: options.voice, voiceReference: options.voiceReference, language: options.language, requireGpu: options.requireGpu, model: options.model, refText: options.refText })
       const result = (deps.synthesize ?? ((spec) => ({
         provider: providerId,
         ...runBounded(spec.command, spec.args, {
@@ -304,6 +306,8 @@ export function runAudioPreflight(options = {}, deps = {}) {
     hardware: { gpu: hardware },
     device,
     voice: options.voice ?? null,
+    model: options.model ?? null,
+    refText: options.refText ?? null,
     voiceReference: voiceReference ?? null,
     sample,
     checks,
@@ -333,6 +337,8 @@ function parseArgs(argv) {
     else if (value === '--language') args.language = take()
     else if (value === '--voice') args.voice = take()
     else if (value === '--voice-reference') args.voiceReference = take()
+    else if (value === '--model') args.model = take()
+    else if (value === '--ref-text') args.refText = take()
     else if (value === '--sample-text') args.sampleText = take()
     else if (value === '--sample-file') args.sampleFile = take()
     else if (value === '--out') args.outputDir = take()

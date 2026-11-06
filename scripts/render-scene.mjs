@@ -11,6 +11,7 @@ import { createEngine, guardMemory } from './lib/render/engine.mjs'
 import { selectEncoder, encoderArgs } from './lib/render/encoder.mjs'
 import { createComponents } from './lib/render/components.mjs'
 import { writeReport } from './lib/render/report.mjs'
+import { findEpisodeRoot, loadTheme, resolveVisualStyle } from './lib/render/theme.mjs'
 
 function validateMeta(meta) {
   if (!meta || typeof meta.id !== 'string' || !meta.id.trim()) throw new Error('scene meta.id must be a non-empty string')
@@ -55,6 +56,8 @@ export async function renderScene(scenePath, options = {}) {
   const timings = { setupMs: 0, snapshotsMs: 0, drawMs: 0, pixelReadMs: 0, pipeMs: 0, encodeMs: 0, hashMs: 0 }
   const memory = guardMemory(options.minFreeMemMiB ?? 1024)
   const sceneFile = path.resolve(scenePath)
+  const style = resolveVisualStyle({ episodeRoot: findEpisodeRoot(sceneFile), id: options.visualStyle, dataRoot: options.dataRoot })
+  const theme = await loadTheme(style)
   const { meta, draw } = await import(pathToFileURL(sceneFile).href)
   validateMeta(meta)
   if (typeof draw !== 'function') throw new Error('scene must export draw(ctx, t, api)')
@@ -71,7 +74,7 @@ export async function renderScene(scenePath, options = {}) {
   let sheet, proc
   try {
     const { canvas, ctx } = engine
-    const api = createComponents(ctx, { ...options.components, ...(options.bodyFont === undefined ? {} : { bodyFont: options.bodyFont }) })
+    const api = createComponents(ctx, { ...options.components, theme, bodyFont: options.bodyFont ?? theme.bodyFont })
     timings.setupMs = performance.now() - stageStarted
     const paint = t => {
       const start = performance.now()
@@ -144,7 +147,7 @@ export async function renderScene(scenePath, options = {}) {
       outputSha256 = await hashFile(output)
       timings.hashMs = performance.now() - hashStarted
     }
-    const report = { schemaVersion: 1, scene: sceneFile, meta, output, outputSha256, engine: { requested: engine.requested, details: engine.details, gpuDetails: engine.gpuDetails, gpuError: engine.gpuError, reason: engine.reason }, encoder, priorityError, memory, frames, contactSheet: options.contactSheet ? path.resolve(options.contactSheet) : null, snapshotsOnly, timings, elapsedMs: Date.now() - started }
+    const report = { schemaVersion: 1, scene: sceneFile, meta, output, outputSha256, style: { id: style.id, sha256: style.sha256, source: style.source }, engine: { requested: engine.requested, details: engine.details, gpuDetails: engine.gpuDetails, gpuError: engine.gpuError, reason: engine.reason }, encoder, priorityError, memory, frames, contactSheet: options.contactSheet ? path.resolve(options.contactSheet) : null, snapshotsOnly, timings, elapsedMs: Date.now() - started }
     if (output) await writeReport(`${output}.render.json`, report)
     return report
   } finally {
@@ -156,9 +159,9 @@ export async function renderScene(scenePath, options = {}) {
 
 function parseArgs(args) {
   const scene = args.shift()
-  if (!scene || scene.startsWith('--')) throw new Error('Usage: render-scene.mjs <scene.mjs> --out <mp4> [--engine cpu|gpu|auto] [--encoder auto|h264_nvenc|libx264] [--threads n] [--body-font family] [--frames seconds,... --frames-dir dir] [--contact-sheet png] [--min-free-mem-mib n] [--snapshots-only] [--json]')
+  if (!scene || scene.startsWith('--')) throw new Error('Usage: render-scene.mjs <scene.mjs> --out <mp4> [--engine cpu|gpu|auto] [--encoder auto|h264_nvenc|libx264] [--threads n] [--visual-style id] [--body-font family] [--frames seconds,... --frames-dir dir] [--contact-sheet png] [--min-free-mem-mib n] [--snapshots-only] [--json]')
   const options = {}
-  const names = { '--out': 'out', '--engine': 'engine', '--encoder': 'encoder', '--threads': 'threads', '--body-font': 'bodyFont', '--frames': 'frames', '--frames-dir': 'framesDir', '--contact-sheet': 'contactSheet', '--min-free-mem-mib': 'minFreeMemMiB' }
+  const names = { '--out': 'out', '--engine': 'engine', '--encoder': 'encoder', '--threads': 'threads', '--visual-style': 'visualStyle', '--body-font': 'bodyFont', '--frames': 'frames', '--frames-dir': 'framesDir', '--contact-sheet': 'contactSheet', '--min-free-mem-mib': 'minFreeMemMiB' }
   while (args.length) {
     const flag = args.shift()
     if (flag === '--json') { options.json = true; continue }

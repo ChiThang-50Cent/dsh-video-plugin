@@ -1,0 +1,32 @@
+{
+  "schemaVersion": 1,
+  "id": "default",
+  "name": "Default neutral dark",
+  "description": "Neutral dark explainer look using system fonts; a safe starting point to copy and restyle.",
+  "colors": {
+    "background": "#0f1420",
+    "ink": "#f2f4f8",
+    "muted": "#a5b0c2",
+    "line": "#3a4356",
+    "accent": "#ffcc66",
+    "structure": "#55e2c1",
+    "success": "#55e2c1",
+    "error": "#ff8f8f"
+  },
+  "typography": {
+    "headline": { "family": "sans-serif", "size": 72, "weight": 600 },
+    "body": { "family": "sans-serif", "size": 40, "weight": 400 },
+    "label": { "family": "sans-serif", "size": 32, "weight": 600 },
+    "data": { "family": "monospace", "size": 28, "weight": 400 }
+  },
+  "layout": {
+    "width": 1920,
+    "height": 1080,
+    "fps": 30,
+    "safeMarginsPct": 5
+  },
+  "motion": {
+    "easing": "easeInOut",
+    "fadeSec": 0.4
+  }
+}

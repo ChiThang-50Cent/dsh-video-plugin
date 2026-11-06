@@ -17,6 +17,7 @@
 import { spawnSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import fs from 'node:fs'
+import path from 'node:path'
 import { pathToFileURL } from 'node:url'
 
 const TIMEOUT_MS = 120_000
@@ -205,6 +206,35 @@ function duplicateCheck(file) {
   }
 }
 
+function loudnessCheck(file, audio, options) {
+  const target = { integratedLufs: -16, truePeakDbtp: -1.5, toleranceLu: 2, ...options.loudness }
+  if (Object.values(target).some((value) => !Number.isFinite(value)) || target.toleranceLu < 0) {
+    return { status: 'FAIL', target, detail: 'invalid loudness target' }
+  }
+  if (audio === null) return { status: 'NOT_APPLICABLE', target, detail: 'no audio stream' }
+  const result = run('ffmpeg', ['-hide_banner', '-nostats', '-i', file, '-map', '0:a:0', '-vn', '-af', 'ebur128=peak=true', '-f', 'null', '-'], 300_000)
+  const summary = result.stderr.split('Summary:').at(-1)
+  const integrated = Number(/I:\s*(-?\d+(?:\.\d+)?)\s*LUFS/i.exec(summary)?.[1])
+  const lra = Number(/LRA:\s*(-?\d+(?:\.\d+)?)\s*LU/i.exec(summary)?.[1])
+  const peak = Number(/Peak:\s*(-?\d+(?:\.\d+)?)\s*dBFS/i.exec(summary)?.[1])
+  if (!result.ok || ![integrated, lra, peak].every(Number.isFinite)) {
+    return { status: 'UNAVAILABLE', target, detail: result.error ?? 'ffmpeg loudness measurement failed or was incomplete' }
+  }
+  const pass = Math.abs(integrated - target.integratedLufs) <= target.toleranceLu + 1e-9 && peak <= target.truePeakDbtp + 0.5 + 1e-9
+  return { status: pass ? 'PASS' : 'FAIL', target, measuredIntegratedLufs: integrated, measuredTruePeakDbtp: peak, measuredLra: lra }
+}
+
+function projectLoudness(video) {
+  let dir = path.dirname(path.resolve(video))
+  while (true) {
+    const project = path.join(dir, 'project.json')
+    if (fs.existsSync(project)) return JSON.parse(fs.readFileSync(project, 'utf8')).audio?.loudness
+    const parent = path.dirname(dir)
+    if (parent === dir) return undefined
+    dir = parent
+  }
+}
+
 /**
  * @param {string} video
  * @param {{width?: number, height?: number, fps?: number, allowNoAudio?: boolean, quality?: boolean,
@@ -215,6 +245,8 @@ export function qaMedia(video, options = {}) {
   const metadata = probeMetadata(video, options)
   const errors = [...metadata.errors]
   const warnings = []
+  const loudness = loudnessCheck(video, metadata.audio, { loudness: options.loudness ?? projectLoudness(video) })
+  if (!['PASS', 'NOT_APPLICABLE'].includes(loudness.status)) errors.push(`audio loudness ${loudness.status.toLowerCase()}`)
   const quality = { checked: options.quality === true || options.strictAudio === true || options.duplicates === true || options.subtitles !== undefined, checks: [], warnings: [] }
   if (options.quality === true || options.strictAudio === true || options.duplicates === true) {
     const result = qualityChecks(video, metadata)
@@ -249,6 +281,7 @@ export function qaMedia(video, options = {}) {
     quality,
     checks: {
       metadata: { status: metadata.ok ? 'PASS' : 'FAIL', errors: metadata.errors },
+      loudness,
       quality: quality.checked
         ? { status: quality.checks.some((check) => check.status === 'FAIL') ? 'FAIL' : quality.checks.length === 0 || quality.checks.every((check) => check.status === 'UNAVAILABLE') ? 'UNAVAILABLE' : quality.checks.some((check) => check.status === 'UNAVAILABLE') ? 'INCOMPLETE' : quality.checks.some((check) => check.status === 'WARN') ? 'WARN' : 'PASS', checks: quality.checks, warnings: quality.warnings }
         : { status: 'NOT_RUN', note: 'metadata only; pass --quality/--subtitles for targeted media checks' },

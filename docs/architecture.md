@@ -38,7 +38,7 @@ video-studio/                  # code root (may be read-only if installed)
   skills/
   kit/                         # project/production/throughline/claim/review/segments/scene contracts
   scripts/
-  library/                     # built-in catalog + styles; copied to a data root on init
+  library/                     # built-in catalog, narration styles and the default visual style; copied to a data root on init
   projects/                    # only when dataRoot == codeRoot
   .cache/
 <dataRoot>/
@@ -46,12 +46,13 @@ video-studio/                  # code root (may be read-only if installed)
     catalog.json
     templates/
     scenes/<id>/{source,preview,qa}
-    styles/<id>/{style.json, notes.md, optional source}
+    styles/<id>/{style.json, notes.md, optional source}            # narration (voice/writing) references
+    visual-styles/<id>/{style.json, fonts/, refs/, notes.md}       # render look; project/episode visualStyle selects one
   projects/
     <series>/
-      project.json
+      project.json             # visualStyle (series look), styleRefs (narration references)
       episodes/<ep>/
-        production.json        # mode/risk
+        production.json        # mode/risk, optional visualStyle override
         request.md
         execution-brief.md
         throughline-map.json    # narrated/mixed

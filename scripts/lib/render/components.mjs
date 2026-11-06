@@ -7,9 +7,11 @@ const fade = (t, start = 0, duration = 1) => duration <= 0 ? Number(t >= start) 
 const crossfade = (t, start = 0, duration = 1) => { const incoming = fade(t, start, duration); return { incoming, outgoing: 1 - incoming }; };
 
 export function createComponents(ctx, options = {}) {
-  const bodyFont = options.bodyFont || 'sans-serif';
+  const theme = options.theme;
+  const colors = theme?.colors ?? {};
+  const bodyFont = options.bodyFont || theme?.bodyFont || 'sans-serif';
   function text(value, x, y, settings = {}) {
-    const { size = 48, color = '#ffffff', font = bodyFont, weight = 'normal', maxWidth = Infinity, lineHeight = size * 1.2 } = settings;
+    const { size = 48, color = colors.ink ?? '#ffffff', font = bodyFont, weight = 'normal', maxWidth = Infinity, lineHeight = size * 1.2 } = settings;
     ctx.save();
     ctx.font = `${weight} ${size}px ${font}`;
     ctx.fillStyle = color;
@@ -40,10 +42,10 @@ export function createComponents(ctx, options = {}) {
     return { x, y: top, width, height: bottom - top, baseline: y };
   }
   function formula(tex, x, y, settings = {}) {
-    return drawFormula(ctx, tex, x, y, { bodyFont, ...settings });
+    return drawFormula(ctx, tex, x, y, { bodyFont, color: colors.ink ?? '#ffffff', ...settings });
   }
   function axes(settings = {}) {
-    const { x = 0, y = 0, width = 400, height = 300, xMin = -5, xMax = 5, yMin = -3, yMax = 3, xStep = 1, yStep = 1, color = '#a5bbda', lineWidth = 2, labels = true, fontSize = 18 } = settings;
+    const { x = 0, y = 0, width = 400, height = 300, xMin = -5, xMax = 5, yMin = -3, yMax = 3, xStep = 1, yStep = 1, color = colors.muted ?? '#a5bbda', lineWidth = 2, labels = true, fontSize = 18 } = settings;
     const px = (v) => x + (v - xMin) * width / (xMax - xMin);
     const py = (v) => y + height - (v - yMin) * height / (yMax - yMin);
     const axisX = Math.max(x, Math.min(x + width, px(0)));
@@ -57,7 +59,7 @@ export function createComponents(ctx, options = {}) {
     return { x, y, width, height, mapX: px, mapY: py };
   }
   function plot(fn, settings = {}) {
-    const { x = 0, y = 0, width = 400, height = 300, xMin = -5, xMax = 5, yMin = -3, yMax = 3, progress = 1, samples = 200, color = '#55e2c1', lineWidth = 4 } = settings;
+    const { x = 0, y = 0, width = 400, height = 300, xMin = -5, xMax = 5, yMin = -3, yMax = 3, progress = 1, samples = 200, color = colors.structure ?? '#55e2c1', lineWidth = 4 } = settings;
     const count = Math.max(1, Math.floor(samples));
     const reveal = clamp(progress) * count;
     ctx.save(); ctx.beginPath(); ctx.rect(x, y, width, height); ctx.clip(); ctx.strokeStyle = color; ctx.lineWidth = lineWidth; ctx.beginPath();
@@ -73,14 +75,14 @@ export function createComponents(ctx, options = {}) {
     return { x, y, width, height };
   }
   function arrow(x1, y1, x2, y2, settings = {}) {
-    const { color = '#ffffff', lineWidth = 3, headSize = 14 } = settings;
+    const { color = colors.ink ?? '#ffffff', lineWidth = 3, headSize = 14 } = settings;
     const angle = Math.atan2(y2 - y1, x2 - x1);
     ctx.save(); ctx.strokeStyle = color; ctx.lineWidth = lineWidth; ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2);
     ctx.moveTo(x2 - headSize * Math.cos(angle - Math.PI / 6), y2 - headSize * Math.sin(angle - Math.PI / 6)); ctx.lineTo(x2, y2); ctx.lineTo(x2 - headSize * Math.cos(angle + Math.PI / 6), y2 - headSize * Math.sin(angle + Math.PI / 6)); ctx.stroke(); ctx.restore();
   }
   function highlight(x, y, width, height, settings = {}) {
-    ctx.save(); ctx.strokeStyle = settings.color || '#ffcc66'; ctx.lineWidth = settings.lineWidth || 3; ctx.strokeRect(x, y, width, height); ctx.restore();
+    ctx.save(); ctx.strokeStyle = settings.color || colors.accent || '#ffcc66'; ctx.lineWidth = settings.lineWidth || 3; ctx.strokeRect(x, y, width, height); ctx.restore();
     return { x, y, width, height };
   }
-  return { easing: { linear, easeInOut }, fade, crossfade, text, formula, axes, plot, arrow, highlight };
+  return { easing: { linear, easeInOut }, fade, crossfade, text, formula, axes, plot, arrow, highlight, theme };
 }

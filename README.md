@@ -51,11 +51,11 @@ node /path/to/video-studio/scripts/init-workspace.mjs --data-root /data/video
 
 Precedence is explicit `--data-root`/plugin `dataRoot` > `VIDEO_STUDIO_ROOT` > `studio.config.json` > initialized workspace ancestor or cwd. Relative explicit and environment values resolve against cwd; relative config values resolve against the config file directory. The plugin and CLI helpers use the same resolver. If `dataRoot` is set only in the plugin row, export the same value for shell helpers or pass `--data-root`; a profile row is not visible to a CLI process. Run the code root's `scripts/studio-root.mjs` from the workspace to print effective roots. Initialization is idempotent and copies missing built-in styles/catalog; it never overwrites existing user files.
 
-Install the npm payload separately from production data. The package deliberately excludes user-provided transcripts and includes `library/catalog.json`, `library/styles/default.json` and the public style metadata/notes needed to initialize.
+Install the npm payload separately from production data. The package deliberately excludes user-provided transcripts and includes `library/catalog.json`, the built-in `library/visual-styles/default` look and the public narration style metadata/notes needed to initialize.
 
 ## Built-in Skia renderer
 
-Install the package dependencies and FFmpeg, then run `node scripts/preflight.mjs` in the intended execution context. A scene is an ES module exporting `meta = { id, durationSec, width, height, fps }` and `draw(ctx, t, api)`. Drawing must depend only on its inputs. The built-in API provides easing, fades and crossfades, wrapped text, cached TeX formulas, axes, progressively revealed function plots, arrows and highlights. Set the body font from the project style for Vietnamese text and formula `\text`.
+Install the package dependencies and FFmpeg, then run `node scripts/preflight.mjs` in the intended execution context. A scene is an ES module exporting `meta = { id, durationSec, width, height, fps }` and `draw(ctx, t, api)`. Drawing must depend only on its inputs. The built-in API provides easing, fades and crossfades, wrapped text, cached TeX formulas, axes, progressively revealed function plots, arrows and highlights, plus `api.theme`: the active visual style's colours, typography (`api.theme.font(role)`), layout, motion and free-form tokens, with its fonts already registered. Scenes take every colour and font from `api.theme`; see [Visual styles](library/visual-styles/README.md).
 
 ```bash
 node scripts/render-scene.mjs scene.mjs --out scene.mp4 --engine auto --encoder auto
@@ -65,7 +65,7 @@ node scripts/render-episode.mjs path/to/episode
 
 The scene CLI also accepts `--engine cpu|gpu|auto`, `--encoder auto|h264_nvenc|libx264`, `--threads n`, `--min-free-mem-mib n`, `--body-font <family>`, `--frames`, `--frames-dir`, `--contact-sheet` and `--json`. A full render writes `<out>.render.json`; snapshots-only requires frame times and a frames directory and does not require `--out`. The episode renderer consumes frame-aligned, contiguous timeline scenes with episode-relative `source`, `startSec` and `durationSec`; audio chunks are read in manifest order from time zero. It probes each audio stream and requires its measured duration to match the manifest within 0.05 seconds. Audio longer than the timeline is rejected; shorter audio is padded with silence. Silent and text-only episodes still require `audio/manifest.json`, but may have empty chunks. The renderer does not synthesize speech.
 
-Pass `--body-font <family>` to scene or episode rendering to select the font used for body text and TeX `\text`. Without an override, episode rendering uses `bodyFont` from the project style, resolved inside the workspace.
+The visual style is resolved per episode: `production.json.visualStyle` overrides `project.json.visualStyle`, falling back to the built-in `default`; `--visual-style <id>` overrides both for one render. `--body-font <family>` overrides only the body font. The render report records the style id and SHA-256 (style.json plus its font files), and scene QA must record the same `styleSha256` before release.
 
 Episode rendering refuses to replace an existing output unless `--overwrite` is explicitly supplied. It keeps per-scene reports in `reports/render-scenes/<id>.render.json`; intermediate videos are discarded, so each report's `output` is null and `episodeOutput` identifies the master. Do not overwrite a released master without authorization.
 

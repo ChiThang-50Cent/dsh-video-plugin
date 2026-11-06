@@ -1,0 +1,143 @@
+#!/usr/bin/env node
+import fs from 'node:fs'
+import path from 'node:path'
+import { createHash } from 'node:crypto'
+import { spawn } from 'node:child_process'
+import { createInterface } from 'node:readline'
+import { fileURLToPath, pathToFileURL } from 'node:url'
+
+const helper = fileURLToPath(new URL('./lib/tts/omnivoice_batch.py', import.meta.url))
+const hash = (value) => createHash('sha256').update(value).digest('hex')
+const readJson = (file) => JSON.parse(fs.readFileSync(file, 'utf8'))
+
+function parseArgs(argv) {
+  const options = { python: 'python', model: 'k2-fsa/OmniVoice', device: 'cuda', timeoutMs: 120000, overallTimeoutMs: 3600000, retries: 1, segments: 'audio/segments.json' }
+  const names = { '--python': 'python', '--helper': 'helper', '--model': 'model', '--device': 'device', '--voice-reference': 'voiceReference', '--ref-text': 'refText', '--language': 'language', '--timeout-ms': 'timeoutMs', '--overall-timeout-ms': 'overallTimeoutMs', '--retries': 'retries', '--segments': 'segments' }
+  for (let i = 0; i < argv.length; i++) {
+    const arg = argv[i]
+    if (arg === '--require-gpu') options.requireGpu = true
+    else if (arg === '--json') options.json = true
+    else if (names[arg]) {
+      if (argv[i + 1] === undefined || argv[i + 1].startsWith('--')) throw new Error(`${arg} needs a value`)
+      options[names[arg]] = argv[++i]
+    } else if (!arg.startsWith('-') && !options.episode) options.episode = arg
+    else throw new Error(`unexpected argument ${arg}`)
+  }
+  for (const name of ['timeoutMs', 'overallTimeoutMs', 'retries']) {
+    options[name] = Number(options[name])
+    if (!Number.isSafeInteger(options[name]) || options[name] < (name === 'retries' ? 0 : 1)) throw new Error(`invalid ${name}`)
+  }
+  if (!options.episode || !options.voiceReference || !options.refText) throw new Error('episode, --voice-reference and --ref-text are required')
+  if (options.requireGpu && !/^cuda(?::\d+)?$/.test(options.device)) throw new Error('--require-gpu requires a CUDA device; refusing CPU fallback')
+  return options
+}
+
+class Worker {
+  constructor(options, deadline) {
+    this.options = options
+    this.deadline = deadline
+    this.lines = []
+    this.waiter = null
+    this.stderr = ''
+    this.child = spawn(options.python, [options.helper ?? helper, '--model', options.model, '--device', options.device, '--voice-reference', options.voiceReference, '--ref-text', options.refText], { detached: true, stdio: ['pipe', 'pipe', 'pipe'] })
+    this.child.stderr.on('data', (data) => { this.stderr = (this.stderr + data).slice(-8000) })
+    createInterface({ input: this.child.stdout }).on('line', (line) => {
+      try { this.deliver(null, JSON.parse(line)) } catch { this.deliver(new Error(`invalid helper response: ${line}`)) }
+    })
+    this.child.on('error', (error) => this.deliver(error))
+    this.child.on('exit', (code, signal) => this.deliver(new Error(`helper exited (${code ?? signal}): ${this.stderr}`)))
+    this.child.stdin.on('error', (error) => this.deliver(error))
+  }
+  deliver(error, value) {
+    if (this.waiter) { const fn = this.waiter; this.waiter = null; fn(error, value) }
+    else this.lines.push([error, value])
+  }
+  next() {
+    return new Promise((resolve, reject) => {
+      const duration = Math.min(this.options.timeoutMs, this.deadline - Date.now())
+      if (duration <= 0) return reject(new Error('overall timeout exceeded'))
+      const timer = setTimeout(() => { this.waiter = null; reject(new Error('helper timeout')) }, duration)
+      const finish = (error, value) => { clearTimeout(timer); error ? reject(error) : resolve(value) }
+      if (this.lines.length) finish(...this.lines.shift())
+      else this.waiter = finish
+    })
+  }
+  stop() {
+    this.child.stdin.destroy()
+    if (this.child.pid) {
+      try { process.kill(-this.child.pid, 'SIGKILL') } catch (error) { if (error.code !== 'ESRCH') throw error }
+    }
+  }
+}
+
+export async function synthesize(options) {
+  const episode = path.resolve(options.episode)
+  const segments = readJson(path.resolve(episode, options.segments))
+  const narrationSha256 = hash(fs.readFileSync(path.join(episode, 'narration.md')))
+  if (segments.narrationSha256 !== narrationSha256) throw new Error('segments are stale relative to narration.md')
+  if (!Array.isArray(segments.segments) || !segments.segments.length) throw new Error('segments are empty')
+  const manifestPath = path.join(episode, 'audio/manifest.json')
+  const prior = fs.existsSync(manifestPath) ? readJson(manifestPath) : {}
+  const previous = new Map((prior.chunks ?? []).map((chunk) => [chunk.segmentId ?? chunk.id, chunk]))
+  const refHash = hash(fs.readFileSync(options.voiceReference))
+  const deadline = Date.now() + options.overallTimeoutMs
+  const chunks = []
+  let worker, ready, synthesized = 0, reused = 0
+  const save = () => {
+    const { stale: _stale, staleReason: _staleReason, ...rest } = prior
+    const record = { ...rest, schemaVersion: 1, narrationSha256, generatedAt: new Date().toISOString(), engine: { ...prior.engine, provider: 'omnivoice', version: ready?.version ?? prior.engine?.version ?? 'unknown', command: options.python, model: options.model, device: ready?.device ?? prior.engine?.device ?? options.device, voiceReference: options.voiceReference, voiceReferenceSha256: refHash, referenceText: options.refText, settings: { language: options.language ?? null, device: options.device } }, chunks }
+    const temp = `${manifestPath}.tmp-${process.pid}`
+    fs.writeFileSync(temp, `${JSON.stringify(record, null, 2)}\n`)
+    fs.renameSync(temp, manifestPath)
+  }
+  try {
+    for (const segment of segments.segments) {
+      if (Date.now() >= deadline) throw new Error('overall timeout exceeded')
+      if (!segment.id || typeof segment.text !== 'string' || typeof segment.audio !== 'string') throw new Error('invalid segment')
+      const output = path.resolve(episode, segment.audio)
+      if (!output.startsWith(`${episode}${path.sep}`)) throw new Error(`segment path escapes episode: ${segment.audio}`)
+      const text = segment.spokenText ?? segment.text
+      const fingerprint = hash(JSON.stringify({ text, model: options.model, voiceReference: refHash, refText: options.refText, language: options.language ?? null, device: options.device }))
+      const old = previous.get(segment.id)
+      if (old?.fingerprint === fingerprint && old.path === segment.audio && fs.existsSync(output) && old.sha256 === hash(fs.readFileSync(output))) {
+        chunks.push(old); reused++; continue
+      }
+      fs.mkdirSync(path.dirname(output), { recursive: true })
+      const temp = `${output}.tmp-${process.pid}`
+      let failure
+      for (let attempt = 1; attempt <= options.retries + 1; attempt++) {
+        try {
+          if (!worker) {
+            worker = new Worker(options, deadline)
+            ready = await worker.next()
+            if (ready.type !== 'ready' || (options.device.startsWith('cuda') && !String(ready.device).startsWith('cuda'))) throw new Error('helper did not confirm CUDA; refusing CPU fallback')
+          }
+          worker.child.stdin.write(`${JSON.stringify({ id: segment.id, text, language: options.language, output: temp })}\n`)
+          const result = await worker.next()
+          if (result.type !== 'result' || result.id !== segment.id || !result.ok) throw new Error(result.error ?? 'invalid helper result')
+          if (!Number.isFinite(result.durationSec) || result.durationSec <= 0 || !fs.existsSync(temp)) throw new Error('helper produced invalid audio')
+          fs.renameSync(temp, output)
+          chunks.push({ id: segment.id, segmentId: segment.id, path: segment.audio, sha256: hash(fs.readFileSync(output)), durationSec: result.durationSec, fingerprint, attempts: attempt })
+          synthesized++; save(); failure = null; break
+        } catch (error) {
+          failure = error
+          worker?.stop(); worker = null
+          fs.rmSync(temp, { force: true })
+          if (Date.now() >= deadline) break
+        }
+      }
+      if (failure) throw new Error(`synthesis failed for ${segment.id}: ${failure.message}`)
+    }
+    save()
+    return { synthesized, reused, device: ready?.device ?? prior.engine?.device ?? options.device, chunks: chunks.length }
+  } finally { worker?.stop() }
+}
+
+async function main() {
+  try {
+    const options = parseArgs(process.argv.slice(2))
+    const result = await synthesize(options)
+    console.log(JSON.stringify(result, null, 2))
+  } catch (error) { console.error(`synthesize-narration: ${error.message}`); process.exitCode = 1 }
+}
+if (process.argv[1] !== undefined && pathToFileURL(process.argv[1]).href === import.meta.url) await main()

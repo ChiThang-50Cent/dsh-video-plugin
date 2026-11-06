@@ -11,8 +11,8 @@ function fixture(t) {
   t.after(() => fs.rmSync(root, { recursive: true, force: true }))
   const project = path.join(root, 'projects', 'series')
   const write = (file, value) => { fs.mkdirSync(path.dirname(file), { recursive: true }); fs.writeFileSync(file, JSON.stringify(value)) }
-  write(path.join(project, 'project.json'), { style: 'style.json', styleRefs: [] })
-  write(path.join(project, 'style.json'), { font: 'test-font', colors: ['blue'] })
+  write(path.join(project, 'project.json'), { visualStyle: 'brand', styleRefs: [] })
+  write(path.join(root, 'library', 'visual-styles', 'brand', 'style.json'), { schemaVersion: 1, id: 'brand', colors: { ink: 'blue' }, typography: { body: { family: 'test-font' } } })
   function episode(name) {
     const dir = path.join(project, 'episodes', name)
     write(path.join(dir, 'production.json'), { mode: 'narrated' })

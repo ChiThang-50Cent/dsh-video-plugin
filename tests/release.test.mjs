@@ -9,6 +9,9 @@ import { validateEpisode } from '../scripts/validate-episode.mjs'
 import { qaMedia } from '../scripts/qa-media.mjs'
 import { createEpisode } from '../scripts/new-episode.mjs'
 import { makeEpisode, makeSegments, writeSegmentManifest } from './helpers/episode-fixtures.mjs'
+import { resolveVisualStyle } from '../scripts/lib/render/theme.mjs'
+
+const DEFAULT_STYLE_SHA = resolveVisualStyle().sha256
 
 function tempRoot(t) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'video-studio-release-'))
@@ -41,7 +44,7 @@ function writeSilentRelease(root, { masterFile, media } = {}) {
     schemaVersion: 1, durationSec: 1, scenes: [{ id: 's01-title', startSec: 0, durationSec: 1, keyframes: [0, 0.5, 0.9] }],
   }))
   fs.writeFileSync(path.join(root, 'audio', 'manifest.json'), JSON.stringify({ schemaVersion: 1, engine: null, chunks: [] }))
-  fs.writeFileSync(path.join(root, 'qa', 'scene', 's01-title.json'), JSON.stringify({ status: 'PASS', sceneId: 's01-title', checks: ['bounds'] }))
+  fs.writeFileSync(path.join(root, 'qa', 'scene', 's01-title.json'), JSON.stringify({ status: 'PASS', sceneId: 's01-title', checks: ['bounds'], styleSha256: DEFAULT_STYLE_SHA }))
   fs.writeFileSync(path.join(root, 'qa', 'final.json'), JSON.stringify({ status: 'PASS', blockers: [], sceneChecks: { 's01-title': { status: 'PASS' } } }))
   const report = media ?? qaMedia(path.join(root, 'exports', 'master.mp4'), { width: 320, height: 180, fps: 30, allowNoAudio: true })
   fs.writeFileSync(path.join(root, 'qa', 'media.json'), JSON.stringify(report, null, 2))
@@ -202,15 +205,31 @@ test('fully verified narrated episode passes release', async (t) => {
   const segments = makeSegments(episode.parsed, episode.hash, 1)
   writeSegmentManifest(episode.dir, segments)
   const audio = path.join(episode.dir, 'audio', 'voice.wav')
-  assert.equal(spawnSync('ffmpeg', ['-v', 'error', '-f', 'lavfi', '-i', 'sine=duration=1', '-y', audio]).status, 0)
+  assert.equal(spawnSync('ffmpeg', ['-v', 'error', '-f', 'lavfi', '-i', 'sine=duration=1', '-af', 'volume=6dB', '-y', audio]).status, 0)
   const master = path.join(episode.dir, 'exports', 'master.mp4')
   assert.equal(spawnSync('ffmpeg', ['-v', 'error', '-f', 'lavfi', '-i', 'color=s=320x180:d=2:r=30', '-i', audio, '-c:v', 'mpeg4', '-c:a', 'aac', '-y', master]).status, 0)
   fs.writeFileSync(path.join(episode.dir, 'storyboard.json'), JSON.stringify({ scenes: [{ id: 's01-title', reuseClass: 'A', templateId: 'title', narrationSegments: [segments.segments[0].id] }] }))
   fs.writeFileSync(path.join(episode.dir, 'timeline.json'), JSON.stringify({ durationSec: 2, scenes: [{ id: 's01-title', startSec: 0, durationSec: 2 }] }))
   fs.writeFileSync(path.join(episode.dir, 'audio', 'manifest.json'), JSON.stringify({ narrationSha256: episode.hash, chunks: [{ id: segments.segments[0].id, path: 'audio/voice.wav', durationSec: 1, sha256: createHash('sha256').update(fs.readFileSync(audio)).digest('hex') }] }))
-  fs.writeFileSync(path.join(episode.dir, 'qa', 'scene', 's01-title.json'), JSON.stringify({ status: 'PASS' }))
+  fs.writeFileSync(path.join(episode.dir, 'qa', 'scene', 's01-title.json'), JSON.stringify({ status: 'PASS', narrationSha256: episode.hash, styleSha256: DEFAULT_STYLE_SHA }))
   fs.writeFileSync(path.join(episode.dir, 'qa', 'final.json'), JSON.stringify({ status: 'PASS', blockers: [] }))
   fs.writeFileSync(path.join(episode.dir, 'qa', 'media.json'), JSON.stringify(qaMedia(master)))
   const result = await validateEpisode(episode.dir, { release: true })
   assert.equal(result.release.status, 'PASS', result.errors.join('\n'))
+  const scenePath = path.join(episode.dir, 'qa', 'scene', 's01-title.json')
+  for (const hash of [undefined, '0'.repeat(64)]) {
+    fs.writeFileSync(scenePath, JSON.stringify({ status: 'PASS', narrationSha256: hash, styleSha256: DEFAULT_STYLE_SHA }))
+    const invalid = await validateEpisode(episode.dir, { release: true })
+    assert.match(invalid.release.errors.join('\n'), /s01-title.*narrationSha256/)
+  }
+  fs.writeFileSync(scenePath, JSON.stringify({ status: 'PASS', narrationSha256: episode.hash, styleSha256: '0'.repeat(64) }))
+  const restyled = await validateEpisode(episode.dir, { release: true })
+  assert.match(restyled.release.errors.join('\n'), /s01-title.*styleSha256.*"default"/)
+  fs.writeFileSync(scenePath, JSON.stringify({ status: 'PASS', narrationSha256: episode.hash, styleSha256: DEFAULT_STYLE_SHA }))
+  const mediaPath = path.join(episode.dir, 'qa', 'media.json')
+  const media = JSON.parse(fs.readFileSync(mediaPath))
+  media.checks.loudness.status = 'FAIL'
+  fs.writeFileSync(mediaPath, JSON.stringify(media))
+  const failedLoudness = await validateEpisode(episode.dir, { release: true })
+  assert.match(failedLoudness.release.errors.join('\n'), /loudness check did not pass/)
 })

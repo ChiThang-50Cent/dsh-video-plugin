@@ -33,8 +33,8 @@ Before final encoding, run `node <studio>/scripts/preflight.mjs` in the actual r
 **G4 final/release.** Use `node <studio>/scripts/validate-episode.mjs <episode-dir> --release`. It requires:
 - a real master verified by ffprobe and by hash;
 - `qa/final.json` PASS with no blockers;
-- `qa/media.json` matching the current master (hash/duration/dimensions), plus scene QA;
-- narrated/mixed: G0 PASS with segments, exactly one hashed and ffprobe-verified chunk per segment, measured durations and audio manifest hash/consistency;
+- `qa/media.json` matching the current master (hash/duration/dimensions) with loudness PASS, plus scene QA;
+- narrated/mixed: G0 PASS with segments, exactly one hashed and ffprobe-verified chunk per segment, measured durations and audio manifest hash/consistency; every `qa/scene/<id>.json` records `narrationSha256` equal to the frozen `narration.md` SHA-256 used by G0;
 - silent/text-only: the correct non-narration gates, no fake narration;
 - timeline/master/audio consistency and no unresolved stale marker.
 
@@ -42,7 +42,7 @@ Before final encoding, run `node <studio>/scripts/preflight.mjs` in the actual r
 
 ## Media QA cost boundary
 
-`node <studio>/scripts/qa-media.mjs <video> [width] [height] [fps]` is metadata-only. Add `--quality` for frozen-frame/silence/clipping/A-V-start checks and `--subtitles <srt>` for cue structure/order/duration. `--duplicates` is explicitly expensive. Do not run full-media QA for a narration or code edit; run it on renders and delivery.
+`node <studio>/scripts/qa-media.mjs <video> [width] [height] [fps]` probes metadata and measures audio loudness using FFmpeg ebur128. The nearest ancestor `project.json` may set `audio.loudness` (`integratedLufs`, `truePeakDbtp`, `toleranceLu`); defaults are −16 LUFS, −1.5 dBTP and 2 LU. The check fails outside the integrated tolerance or above true peak target + 0.5 dB. No-audio masters are marked not applicable. Save the JSON output to `qa/media.json`. Add `--quality` for frozen-frame/silence/clipping/A-V-start checks and `--subtitles <srt>` for cue structure/order/duration. `--duplicates` is explicitly expensive. Run on renders and delivery, not narration or code edits.
 Unavailable quality checks are reported as unavailable or incomplete, not PASS; `--strict-audio` rejects unavailable audio checks.
 
 ## Mode policy
@@ -54,6 +54,6 @@ Unavailable quality checks are reported as unavailable or incomplete, not PASS; 
 
 A unchanged renderer/new data: schema+layout+content. B changed code: static+targeted snapshots; visual if risk. C new mechanism: workbench and targeted vision. Shared component changed: regression-check a representative dependent scene.
 
-Records: `qa/scene/<id>.json` with gate names, timestamps, result, evidence paths, failure type; `qa/final.json` with blockers, G0 reference/hash and acceptance. Never call a scene PASS because the renderer exited 0.
+Records: `qa/scene/<id>.json` with gate names, timestamps, result, evidence paths, failure type, `styleSha256` (the `style.sha256` in the scene's render report, i.e. the visual style it was checked under) and, for narrated/mixed episodes, `narrationSha256` of the frozen narration reviewed by that scene QA; `qa/final.json` with blockers, G0 reference/hash and acceptance. Release fails when either hash no longer matches, so a style switch or narration revision forces re-render and re-check. Never call a scene PASS because the renderer exited 0.
 
 Validate worker integration with `scripts/validate-workers.mjs` (plan concurrency/depth; result paths/allowlist), not prompt text. Retry only on a concrete defect; default 2 attempts/scene before escalation. Preserve failures. Use no per-scene QA subagents; one high-risk content audit at episode level is enough.

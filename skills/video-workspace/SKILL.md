@@ -20,7 +20,14 @@ description: Initialize and organize video workspaces, series, episode files, as
 
 Narration revisions use `scripts/revise-narration.mjs`; it writes `narration-revisions/` and marks downstream artifacts stale. Never hand-edit a frozen script and never delete a released master or accepted audio.
 
-Reusable catalog, templates, components and previews live under `library/`; it is not an output dump. Style packages are `library/styles/<id>/` with `style.json`, source reference (or `sourceBundled: false` + `externalSource`), and `notes.md`. A project opts in with `project.json.styleRefs`; validate with `scripts/validate-style-refs.mjs <project-dir>`. Reference material stays in the library, never in `skills/` or the installed bundle.
+Reusable catalog, templates, components and previews live under `library/`; it is not an output dump. Narration style packages are `library/styles/<id>/` with `style.json`, source reference (or `sourceBundled: false` + `externalSource`), and `notes.md`. A project opts in with `project.json.styleRefs`; validate with `scripts/validate-style-refs.mjs <project-dir>`. Reference material stays in the library, never in `skills/` or the installed bundle.
+
+Visual looks are separate packages `library/visual-styles/<id>/` (`style.json` tokens, `fonts/`, `refs/`, `notes.md`; see `library/visual-styles/README.md` at the code root). Selection: `production.json.visualStyle` (this episode) > `project.json.visualStyle` (the series) > built-in `default`. To change the look:
+
+- reuse an existing look: set `visualStyle` on the project (whole series) or on one episode's `production.json` (one-off);
+- derive a new one: `node <studio>/scripts/new-visual-style.mjs <id> --from <existing>`, edit its tokens, optionally add OFL fonts under `fonts/` declared in `style.json.fonts`;
+- start from a reference the user gives (video/screenshots, already on disk): `node <studio>/scripts/extract-style-refs.mjs <id> <files...> --rights "<owner and permitted use>"`, read `refs/contact.png` and the palette in `refs/refs.json`, then set tokens. Take mood, palette and typography direction; never clone a third-party design;
+- then re-render (`render-episode` re-renders exactly the scenes whose style hash changed) and re-run scene QA so each `qa/scene/<id>.json` records the new `styleSha256`. A released master stays untouched; render the restyled cut to a new output path.
 
 ## Modes and releases
 
