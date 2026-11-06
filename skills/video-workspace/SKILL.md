@@ -41,6 +41,6 @@ Visual looks are separate packages `library/visual-styles/<id>/` (`style.json` t
 
 ## Reuse, resume and cleanup
 
-If the user asks for another series, create a new project and retain the shared `library/`. To resume, read `report.json`, manifests, review status and QA, then rebuild only invalid stages. Prefix an accepted master before re-rendering; never overwrite without versioning. Episode `work/` is scratch; `.cache/` is content-addressed. Neither should be required to recreate an accepted master if sources and external dependencies remain. Do not mutate external originals or delete source/voice/accepted output. Compare hashes and dependents, never just filenames.
+If the user asks for another series, create a new project and retain the shared `library/`. To resume, read `reports/`, manifests, review status and QA, then rebuild only invalid stages. Prefix an accepted master before re-rendering; never overwrite without versioning. Episode `work/` is scratch; `.cache/` is content-addressed. Neither should be required to recreate an accepted master if sources and external dependencies remain. Do not mutate external originals or delete source/voice/accepted output. Compare hashes and dependents, never just filenames.
 
 Only promote a scene after reproducible QA, a clear parameter schema and a future-reuse reason. Avoid a taxonomy so deep that every new episode needs a new directory type.

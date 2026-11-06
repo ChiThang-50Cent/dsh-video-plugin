@@ -93,41 +93,13 @@ test('byte-identical or released revisions are refused without explicit authoriz
   assert.equal(marker.previousNarrationSha256.length, 64)
 })
 
-test('legacy artifacts migrate into blocked v2 scaffolding without touching the originals', (t) => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'migrate-test-'))
-  t.after(() => fs.rmSync(dir, { recursive: true, force: true }))
-  fs.writeFileSync(path.join(dir, 'narration.md'), NARRATION)
-  fs.writeFileSync(path.join(dir, 'production.json'), JSON.stringify({ schemaVersion: 1, mode: 'narrated', voiceOver: true, narrationRisk: 'high' }))
-  const oldReview = { schemaVersion: 1, status: 'pass', narrationFile: 'narration.md', blockers: [] }
-  const oldClaims = { status: 'PASS', claims: [] }
-  fs.writeFileSync(path.join(dir, 'narration-review.json'), JSON.stringify(oldReview))
-  fs.writeFileSync(path.join(dir, 'claim-check.json'), JSON.stringify(oldClaims))
-  // Import lazily so this test file remains focused on revision behaviour.
-  return import('../scripts/migrate-narration.mjs').then(({ migrateNarration }) => {
-    const result = migrateNarration({ episodeDir: dir })
-    assert.deepEqual(result.created, ['throughline-map.migrating.json', 'claim-check.migrating.json', 'narration-review.migrating.json'])
-    assert.equal(fs.readFileSync(path.join(dir, 'narration-review.json'), 'utf8'), JSON.stringify(oldReview))
-    assert.equal(fs.readFileSync(path.join(dir, 'claim-check.json'), 'utf8'), JSON.stringify(oldClaims))
-    const review = JSON.parse(fs.readFileSync(path.join(dir, 'narration-review.migrating.json'), 'utf8'))
-    assert.equal(review.throughlineMap, 'throughline-map.json')
-    assert.equal(review.claimCheckFile, 'claim-check.json')
-    assert.equal(review.schemaVersion, 2)
-    assert.equal(review.status, 'blocked')
-    assert.equal(review.independentReview.required, true)
-    assert.equal(validateNarration(dir).ok, false)
-  })
-})
-
-test('revision and migration commands accept an episode directory', (t) => {
+test('revise-narration accepts an episode directory', (t) => {
   const { episode } = setup(t)
   const next = path.join(episode.dir, 'next.md')
   fs.writeFileSync(next, `${NARRATION}\nNew ending.\n`)
   const revise = spawnSync(process.execPath, ['scripts/revise-narration.mjs', episode.dir, '--from', next, '--reason', 'Correction', '--json'], { encoding: 'utf8' })
   assert.equal(revise.status, 0, revise.stderr)
   assert.equal(JSON.parse(revise.stdout).reviewStatus, 'blocked')
-  const migrate = spawnSync(process.execPath, ['scripts/migrate-narration.mjs', episode.dir, '--json'], { encoding: 'utf8' })
-  assert.equal(migrate.status, 0, migrate.stderr)
-  assert.equal(JSON.parse(migrate.stdout).created.length, 3)
 })
 
 test('all supported released masters require authorization and are marked stale', (t) => {

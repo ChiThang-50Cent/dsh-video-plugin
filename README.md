@@ -11,7 +11,7 @@ Current version: 0.7.0. The 0.7 line adds a first-use guide ([docs/getting-start
 - `skills/`: nine DSH skills. `video-narration/references/` carries the Vietnamese style guide, annotated examples and the full G0 review/claim/review schemas.
 - `kit/`: example contracts: project, production mode, through-line map, claim check, narration review, segments, scene contract/result, worker plan.
 - `scripts/`: Node helpers for rendering, workspace init, episode creation, narration integrity/editorial gates, revision, narration lint, editorial pre-scan, scene promotion, episode lint/release, audio preflight/QA, media QA, worker validation and log-based metrics.
-- `library/`: approved scene catalog, templates and narration style packages.
+- `library/`: built-in payload copied into a workspace: the empty scene catalog, narration style packages (`styles/`), the `default` visual style and the visual-style and voice package READMEs. Promoted scenes and templates live in the workspace's own `library/`.
 - `projects/`: one directory per series; `episodes/` holds self-contained episodes.
 - `docs/`: **getting started** ([docs/getting-started.md](docs/getting-started.md), the first thing to read after installing), architecture, acceptance checks, examples and DSH notes.
 
@@ -118,16 +118,6 @@ node scripts/revise-narration.mjs <episode> --from new.md --reason "why the appr
 ```
 
 It archives the old narration/review under `narration-revisions/`, blocks the review with the new hash, moves the old segment manifest aside, blocks the claim audit to `PENDING`, and marks the through-line, storyboard, timeline and audio manifest stale. If a released master exists, a protected `exports/master.stale.json` marker is written; release fails until a new master is rendered and the marker removed. A released master is protected unless `--allow-released` is explicit.
-
-### Migration from v1 reviews
-
-Schema-v1 `narration-review.json`/`claim-check.json` passes are **not** re-certified by the evidence gate. Existing released masters and locked narration are untouched. To continue an older episode, scaffold blocked v2 files without rewriting history:
-
-```bash
-node scripts/migrate-narration.mjs <episode>     # writes *.migrating.json only
-```
-
-Fill the through-line, claims and cited review, rename the three files to their canonical names after a genuine review, then run `validate-narration.mjs --gate`. See `docs/migration-v05.md`.
 
 ### Modes
 
@@ -242,4 +232,4 @@ The suite covers the false limit/self-review regression, unresolved blocking fin
 
 > Use /video-produce for a 10-minute Vietnamese explainer on why negative times negative is positive. Build the through-line map first, write continuous narration, audit every claim with a location, run the editorial and independent review, and freeze it. Use existing PASS templates before new scenes, at most two scene workers, verified audio preflight and a real narrated 1080p MP4. If a source or backend is missing, tell me exactly what is missing.
 
-See `docs/architecture.md`, `docs/acceptance.md`, `docs/examples.md`, `docs/dsh.md` and `docs/log-based-improvements.md`.
+See `docs/getting-started.md`, `docs/architecture.md`, `docs/acceptance.md`, `docs/examples.md` and `docs/dsh.md`.

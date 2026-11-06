@@ -169,9 +169,9 @@ export async function renderEpisode(episodeDir, options = {}) {
   })
   if (Math.abs(end - timeline.durationSec) > 1e-6) throw new Error('timeline scenes must cover durationSec exactly')
   const chunks = audio.chunks.map((chunk, index) => {
-    const duration = chunk?.durationSec ?? chunk?.duration
+    const duration = chunk?.durationSec
     if (!Number.isFinite(duration) || duration <= 0) throw new Error(`audio chunk ${index + 1} requires a positive measured duration`)
-    return { file: episodeFile(root, chunk.path ?? chunk.file ?? chunk.wav ?? chunk.audio, `audio chunk ${index + 1}`), duration }
+    return { file: episodeFile(root, chunk.path, `audio chunk ${index + 1}`), duration }
   })
   let measuredAudio = 0
   for (const chunk of chunks) {

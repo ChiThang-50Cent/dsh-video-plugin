@@ -14,7 +14,7 @@ import { createHash } from 'node:crypto'
 import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { episodeContext } from '../episode-artifacts.mjs'
+import { episodeContext, readLabeledJson } from '../episode-artifacts.mjs'
 
 export const DEFAULT_VISUAL_STYLE = 'default'
 /** Colour names every look defines, so any scene renders correctly under any style. */
@@ -23,14 +23,6 @@ export const VISUAL_STYLE_ID = /^[a-z][a-z0-9-]{0,63}$/
 const codeRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..', '..')
 
 const isObject = (value) => value !== null && typeof value === 'object' && !Array.isArray(value)
-
-function readJson(file, label) {
-  try {
-    return JSON.parse(fs.readFileSync(file, 'utf8'))
-  } catch (error) {
-    throw new Error(`${label} is not readable JSON: ${error.message}`)
-  }
-}
 
 /** Nearest ancestor (inclusive) holding `production.json`, or null outside an episode. */
 export function findEpisodeRoot(start) {
@@ -45,7 +37,7 @@ export function findEpisodeRoot(start) {
 }
 
 /** Every structural problem in a parsed style.json; empty when usable. */
-export function visualStyleErrors(style, packageDir) {
+function visualStyleErrors(style, packageDir) {
   const errors = []
   if (!isObject(style)) return ['style.json must be an object']
   if (style.schemaVersion !== 1) errors.push('schemaVersion must be 1')
@@ -111,7 +103,7 @@ export function resolveVisualStyle(options = {}) {
   const dir = fs.realpathSync(visualStylePackage(id, dataRoot))
   const file = path.join(dir, 'style.json')
   const raw = fs.readFileSync(file)
-  const style = readJson(file, `visual style ${id}`)
+  const style = readLabeledJson(file, `visual style ${id}`)
   const errors = visualStyleErrors(style, dir)
   if (style.id !== undefined && style.id !== id) errors.push(`id "${style.id}" does not match its directory "${id}"`)
   if (errors.length) throw new Error(`visual style "${id}" is invalid: ${errors.join('; ')}`)

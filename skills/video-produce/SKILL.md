@@ -30,7 +30,7 @@ You are the ONE accountable producer. A skill is a procedure, not another agent.
 8. Release only through the strict gate:
    `node <studio>/scripts/validate-episode.mjs <episode-dir> --release`
    It requires a real master verified by ffprobe, `qa/final.json` PASS, `qa/media.json` bound by hash with loudness PASS, scene QA bound to the current visual style SHA-256 (`styleSha256`) and, for narrated/mixed episodes, the frozen narration SHA-256, narration/audio/timeline consistency, and no unreleased stale markers. `--lint` is a work-in-progress check, never delivery.
-9. Complete `reports/production-report.md` and `report.json`: measured wall time (not estimates), model/tool usage from `node <studio>/scripts/collect-metrics.mjs`, A/B/C, QA calls, retries, narration passes, blocked issues, TTS cache invalidations, final master path/hash.
+9. Complete `reports/production-report.md` and `reports/metrics.json` (`collect-metrics.mjs --out`): measured wall time (not estimates), model/tool usage, A/B/C, QA calls, retries, narration passes, blocked issues, TTS cache invalidations, final master path/hash.
 
 ## Gate rules
 

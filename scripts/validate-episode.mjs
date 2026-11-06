@@ -16,11 +16,10 @@
  *
  * Exit codes: 0 pass, 1 lint failure / release not PASS, 2 usage or unreadable input.
  */
-import { createHash } from 'node:crypto'
-import { createReadStream, existsSync, readFileSync, statSync } from 'node:fs'
+import { existsSync, readFileSync, statSync } from 'node:fs'
 import path from 'node:path'
 import { pathToFileURL } from 'node:url'
-import { MODES, NARRATED_MODES, sha256File } from './lib/narration-model.mjs'
+import { MODES, NARRATED_MODES, sha256File, sha256FileStream } from './lib/narration-model.mjs'
 import { findMaster, resolveProductionMode } from './lib/episode-artifacts.mjs'
 import { runBounded } from './lib/bounded.mjs'
 import { validateNarration } from './validate-narration.mjs'
@@ -38,16 +37,6 @@ function readJsonFile(file, label, errors) {
 
 function isObject(value) {
   return value !== null && typeof value === 'object' && !Array.isArray(value)
-}
-
-function hashFileStream(file) {
-  return new Promise((resolve, reject) => {
-    const hash = createHash('sha256')
-    const stream = createReadStream(file)
-    stream.on('data', (chunk) => hash.update(chunk))
-    stream.on('error', reject)
-    stream.on('end', () => resolve(hash.digest('hex')))
-  })
 }
 
 function inside(root, relative) {
@@ -165,7 +154,7 @@ export async function validateEpisode(episodeDir, options = {}) {
   for (const scene of scenes) {
     if (!timed.has(scene.id) && timedScenes.length > 0) warnings.push(`Storyboard scene has no timeline entry: ${scene.id}`)
   }
-  const declaredAudioDuration = (Array.isArray(audio.chunks) ? audio.chunks : []).reduce((sum, chunk) => sum + (Number.isFinite(chunk?.durationSec) ? chunk.durationSec : Number.isFinite(chunk?.duration) ? chunk.duration : 0), 0)
+  const declaredAudioDuration = (Array.isArray(audio.chunks) ? audio.chunks : []).reduce((sum, chunk) => sum + (Number.isFinite(chunk?.durationSec) ? chunk.durationSec : 0), 0)
   if (Number.isFinite(duration) && declaredAudioDuration > duration + 0.05) warnings.push(`declared audio duration (${declaredAudioDuration.toFixed(2)}s) exceeds timeline duration (${duration}s)`)
   if (!Array.isArray(audio.chunks)) errors.push('audio/manifest.json chunks must be an array')
 
@@ -217,7 +206,7 @@ export async function validateEpisode(episodeDir, options = {}) {
       const size = statSync(master.path).size
       if (size < 1024) releaseErrors.push(`final master is implausibly small (${size} bytes)`)
       master.size = size
-      master.sha256 = await hashFileStream(master.path)
+      master.sha256 = sha256FileStream(master.path)
       const probe = runBounded('ffprobe', [
         '-v', 'error', '-show_entries', 'format=duration:stream=codec_type,width,height,r_frame_rate', '-of', 'json', master.path,
       ], { timeoutMs: 30_000, retries: 0 })
@@ -366,7 +355,7 @@ export async function validateEpisode(episodeDir, options = {}) {
         let total = 0
         for (const [index, chunk] of chunks.entries()) {
           const label = `audio chunk ${chunk?.id ?? index + 1}`
-          const chunkRelative = chunk?.path ?? chunk?.file ?? chunk?.wav ?? chunk?.audio
+          const chunkRelative = chunk?.path
           if (!isObject(chunk) || typeof chunkRelative !== 'string') {
             releaseErrors.push(`${label} has no path`)
             continue
@@ -381,8 +370,7 @@ export async function validateEpisode(episodeDir, options = {}) {
             continue
           }
           if (statSync(chunkPath).size < 44) releaseErrors.push(`${label} audio file is empty or header-only`)
-          const chunkDuration = Number.isFinite(chunk.durationSec) ? chunk.durationSec : chunk.duration
-          if (!Number.isFinite(chunkDuration) || chunkDuration <= 0) releaseErrors.push(`${label} durationSec must be positive and measured`)
+          if (!Number.isFinite(chunk.durationSec) || chunk.durationSec <= 0) releaseErrors.push(`${label} durationSec must be positive and measured`)
           if (typeof chunk.sha256 !== 'string' || !/^[a-f0-9]{64}$/i.test(chunk.sha256)) releaseErrors.push(`${label} requires a sha256`)
           else if (sha256File(chunkPath) !== chunk.sha256.toLowerCase()) releaseErrors.push(`${label} sha256 does not match the file`)
           const probe = runBounded('ffprobe', ['-v', 'error', '-show_entries', 'format=duration:stream=codec_type', '-of', 'json', chunkPath], { timeoutMs: 30_000, retries: 0 })
@@ -395,7 +383,7 @@ export async function validateEpisode(episodeDir, options = {}) {
               if (!Number.isFinite(measured) || measured <= 0) releaseErrors.push(`${label} has no measurable duration`)
               else {
                 total += measured
-                if (Number.isFinite(chunkDuration) && Math.abs(measured - chunkDuration) > Math.max(0.05, measured * 0.02)) releaseErrors.push(`${label} declared duration does not match measured duration`)
+                if (Number.isFinite(chunk.durationSec) && Math.abs(measured - chunk.durationSec) > Math.max(0.05, measured * 0.02)) releaseErrors.push(`${label} declared duration does not match measured duration`)
               }
             } catch { releaseErrors.push(`${label} probe returned invalid JSON`) }
           }

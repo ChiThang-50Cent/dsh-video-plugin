@@ -15,10 +15,10 @@
  *        [--quality] [--subtitles <srt>] [--duplicates] [--strict-audio] [--json]
  */
 import { spawnSync } from 'node:child_process'
-import { createHash } from 'node:crypto'
 import fs from 'node:fs'
 import path from 'node:path'
 import { pathToFileURL } from 'node:url'
+import { sha256FileStream } from './lib/narration-model.mjs'
 
 const TIMEOUT_MS = 120_000
 
@@ -32,21 +32,6 @@ function run(command, args, timeoutMs = TIMEOUT_MS) {
     stderr: result.stderr ?? '',
     error: result.error?.message,
   }
-}
-
-export function sha256FileStream(file) {
-  const hash = createHash('sha256')
-  const buffer = Buffer.alloc(1024 * 1024)
-  const descriptor = fs.openSync(file, 'r')
-  try {
-    let bytes
-    while ((bytes = fs.readSync(descriptor, buffer, 0, buffer.length, null)) > 0) {
-      hash.update(buffer.subarray(0, bytes))
-    }
-  } finally {
-    fs.closeSync(descriptor)
-  }
-  return hash.digest('hex')
 }
 
 function parseRate(value) {

@@ -5,7 +5,7 @@ import path from 'node:path'
 import { createHash } from 'node:crypto'
 import { spawnSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
-import { parseNarration, extractSpokenProse } from '../scripts/lib/narration-model.mjs'
+import { parseNarration } from '../scripts/lib/narration-model.mjs'
 import { validateNarration } from '../scripts/validate-narration.mjs'
 import {
   buildClaims,
@@ -276,7 +276,6 @@ test('the narration extractor keeps display math and production notes out of spe
   assert.equal(parsed.spokenText, 'Spoken line.\n\nMore speech.')
   assert.equal(parsed.displayBlocks.length, 1)
   assert.equal(parsed.sections.length, 2)
-  assert.equal(extractSpokenProse('# X\n\nY\n'), 'Y')
 })
 
 test('silent and text-only modes do not require a fake narration', (t) => {

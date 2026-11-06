@@ -147,10 +147,7 @@ function checkProduction(context, errors, warnings) {
     errors.push(`production mode is ${JSON.stringify(mode)}; expected one of ${MODES.join(', ')}`)
     return
   }
-  if (production === undefined) {
-    if (modeInfo.source === 'legacy-inference') warnings.push('production.json is missing; legacy episode inferred as narrated')
-    return
-  }
+  if (production === undefined) return
   if (production.schemaVersion !== undefined && production.schemaVersion !== 1) {
     errors.push(`production.json schemaVersion is ${JSON.stringify(production.schemaVersion)}; expected 1`)
   }
@@ -642,8 +639,7 @@ function checkSegments(context, options, review, errors, warnings) {
     errors.push('segments.json must contain an object')
     return undefined
   }
-  if (![1, 2].includes(manifest.schemaVersion)) warnings.push(`segments schemaVersion is ${JSON.stringify(manifest.schemaVersion)}; expected 2`)
-  if (manifest.schemaVersion === 1) warnings.push('segments schemaVersion 1 has no pronunciation provenance; schemaVersion 2 is required for reviewed overrides')
+  if (manifest.schemaVersion !== 2) errors.push(`segments schemaVersion is ${JSON.stringify(manifest.schemaVersion)}; expected 2`)
   if (!isSha256(manifest.narrationSha256)) errors.push('segments narrationSha256 is missing or not a SHA-256 hex digest')
   else if (context.sha256 !== undefined && manifest.narrationSha256.toLowerCase() !== context.sha256) {
     errors.push('segments were built from a different narration hash; re-plan or use revise-narration for an intentional revision')

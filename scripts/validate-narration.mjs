@@ -27,7 +27,6 @@ import { pathToFileURL } from 'node:url'
 import {
   CRITERIA,
   NARRATED_MODES,
-  extractSpokenProse,
   normalizeText,
   sha256File,
 } from './lib/narration-model.mjs'
@@ -37,7 +36,7 @@ import {
 } from './lib/narration-integrity.mjs'
 import { validateNarrationEditorial } from './lib/narration-editorial.mjs'
 import { resolveProductionMode } from './lib/episode-artifacts.mjs'
-export { CRITERIA, extractSpokenProse, sha256File }
+export { CRITERIA, sha256File }
 export { loadNarrationEpisode, validateNarrationIntegrity, validateNarrationEditorial }
 
 /** @param {string} text */

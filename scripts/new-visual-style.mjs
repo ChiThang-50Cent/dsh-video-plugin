@@ -14,12 +14,10 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { resolveDataRoot } from './studio-paths.mjs'
-import { DEFAULT_VISUAL_STYLE, resolveVisualStyle } from './lib/render/theme.mjs'
-
-const ID = /^[a-z][a-z0-9-]{0,63}$/
+import { DEFAULT_VISUAL_STYLE, VISUAL_STYLE_ID, resolveVisualStyle } from './lib/render/theme.mjs'
 
 export function newVisualStyle(id, options = {}) {
-  if (!ID.test(id ?? '')) throw new Error(`style id must be a lowercase slug: ${JSON.stringify(id)}`)
+  if (!VISUAL_STYLE_ID.test(id ?? '')) throw new Error(`style id must be a lowercase slug: ${JSON.stringify(id)}`)
   const dataRoot = path.resolve(options.dataRoot ?? resolveDataRoot().dataRoot)
   const from = resolveVisualStyle({ id: options.from ?? DEFAULT_VISUAL_STYLE, dataRoot })
   const destination = path.join(dataRoot, 'library', 'visual-styles', id)

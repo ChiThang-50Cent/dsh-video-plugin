@@ -6,6 +6,16 @@ Every change that alters behaviour, a contract or a command adds an entry under 
 
 ## [Unreleased]
 
+### Changed
+- New projects no longer get the unused `renderer` and `tts` fields from `kit/project.json`; rendering and speech are selected by CLI options, `visualStyle`, `voicePackage` and `tts.config.json`.
+- `.gitignore` ignores `tts.config.json` at any depth, so a data root inside the checkout stays clean.
+- Skills point at the files the scripts actually write: `reports/metrics.json` (not a root `report.json`) and the real `audio/manifest.json` fields.
+
+### Removed
+- Superseded one-off reports `IMPLEMENTATION_REPORT.md`, `IMPLEMENTATION_REVIEW_FIXES.md` and `docs/log-based-improvements.md` (still in git history).
+- Internal duplicates: one streaming SHA-256 helper (`sha256FileStream`) and one labelled JSON reader (`readLabeledJson`) replace per-script copies; unused exports `CRITERION_LABELS`, `PROVIDER_DEFINITIONS`, `readSessionFile` and `visualStyleErrors` are now private or gone.
+- Legacy compatibility: `migrate-narration.mjs`, `docs/migration-v05.md`, narrated-mode inference for episodes without `production.json`, `audio/segments.json` schemaVersion 1 (now an error), audio chunk aliases `file`/`wav`/`audio`/`duration` (only `path` and `durationSec`), and the `extractSpokenProse` alias.
+
 ## [0.7.0] - 2026-11-06
 
 ### Added
@@ -67,7 +77,7 @@ Every change that alters behaviour, a contract or a command adds an entry under 
 - Provider-aware audio preflight, bounded jobs, targeted audio QA, DSH-log metrics, worker path/allowlist validation, atomic scene promotion.
 
 ### Migration
-- See [docs/migration-v05.md](docs/migration-v05.md).
+- Older v1 episodes needed new through-line, claim and review files (the migration tool and guide were removed later; see Unreleased).
 
 ## [0.4.0] - 2026-11-05
 

@@ -7,7 +7,7 @@
  * belongs to the evidence-backed editorial review.
  */
 import { createHash } from 'node:crypto'
-import { existsSync, readFileSync } from 'node:fs'
+import { closeSync, existsSync, openSync, readFileSync, readSync } from 'node:fs'
 import path from 'node:path'
 
 export const CRITERIA = [
@@ -20,17 +20,6 @@ export const CRITERIA = [
   'pacing',
   'styleAndOriginality',
 ]
-
-export const CRITERION_LABELS = {
-  accuracy: 'Accuracy and source fidelity',
-  audienceFit: 'Audience fit',
-  narrativeArc: 'Narrative arc / through-line',
-  reasoning: 'Reasoning quality',
-  continuity: 'Continuity and transitions',
-  spokenLanguage: 'Spoken language and pronunciation',
-  pacing: 'Pacing and information density',
-  styleAndOriginality: 'Originality and style',
-}
 
 export const SEVERITIES = ['block', 'needs-work', 'note']
 export const FINDING_STATUSES = ['open', 'resolved', 'escalated', 'withdrawn', 'accepted']
@@ -50,6 +39,21 @@ export function sha256Text(value) {
 /** @param {string} file */
 export function sha256File(file) {
   return createHash('sha256').update(readFileSync(file)).digest('hex')
+}
+
+export function sha256FileStream(file) {
+  const hash = createHash('sha256')
+  const buffer = Buffer.alloc(1024 * 1024)
+  const descriptor = openSync(file, 'r')
+  try {
+    let bytes
+    while ((bytes = readSync(descriptor, buffer, 0, buffer.length, null)) > 0) {
+      hash.update(buffer.subarray(0, bytes))
+    }
+  } finally {
+    closeSync(descriptor)
+  }
+  return hash.digest('hex')
 }
 
 /** @param {string} text */
@@ -285,11 +289,6 @@ export function parseNarration(markdown) {
   }
 }
 
-/** Backwards-compatible extractor used by earlier callers and tests. */
-export function extractSpokenProse(markdown) {
-  return parseNarration(markdown).spokenText
-}
-
 /**
  * Resolve a through-line/claim/review section reference.
  * @param {ReturnType<typeof parseNarration>} parsed
@@ -364,8 +363,7 @@ export function claimSignals(parsed) {
 }
 
 /**
- * Read the episode production mode. Missing `production.json` keeps legacy
- * narrated episodes working; an episode with narration artifacts is narrated.
+ * Read the episode production mode from `production.json`; narrated when absent.
  * @param {string} episodeDir
  */
 export function readProductionMode(episodeDir) {
@@ -381,9 +379,6 @@ export function readProductionMode(episodeDir) {
       return { mode: undefined, source: file, error: `${file}: mode must be one of ${MODES.join(', ')}` }
     }
     return { mode: parsed.mode, source: file, config: parsed }
-  }
-  if (existsSync(path.join(episodeDir, 'narration.md')) || existsSync(path.join(episodeDir, 'narration-review.json'))) {
-    return { mode: 'narrated', source: 'legacy-inference' }
   }
   return { mode: 'narrated', source: 'default' }
 }

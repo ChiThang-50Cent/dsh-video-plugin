@@ -35,4 +35,4 @@ The ids resolve to `library/styles/<id>/` under the studio data root. `scripts/n
 node scripts/validate-style-refs.mjs projects/<series>
 ```
 
-Exit `0` means every referenced package exists, parses, declares its id/language/rights, and has an existing source and notes file.
+Exit `0` means every referenced package exists, parses, declares its id/language/rights and has a notes file; its source must exist unless `style.json` declares `sourceBundled: false` with a non-empty `externalSource` (then a warning is reported instead).

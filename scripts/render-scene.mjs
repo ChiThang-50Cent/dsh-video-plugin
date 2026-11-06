@@ -1,6 +1,5 @@
 #!/usr/bin/env node
 import fs from 'node:fs/promises'
-import { createReadStream } from 'node:fs'
 import { createHash } from 'node:crypto'
 import os from 'node:os'
 import path from 'node:path'
@@ -12,6 +11,7 @@ import { selectEncoder, encoderArgs } from './lib/render/encoder.mjs'
 import { createComponents } from './lib/render/components.mjs'
 import { writeReport } from './lib/render/report.mjs'
 import { findEpisodeRoot, loadTheme, resolveVisualStyle } from './lib/render/theme.mjs'
+import { sha256FileStream } from './lib/narration-model.mjs'
 
 function validateMeta(meta) {
   if (!meta || typeof meta.id !== 'string' || !meta.id.trim()) throw new Error('scene meta.id must be a non-empty string')
@@ -42,12 +42,6 @@ function startEncoder(args, encoder, timeoutMs) {
 
 function encoderError(result) {
   return new Error(`FFmpeg ${result.timedOut ? 'timed out' : result.spawnError?.message || `failed (${result.signal || result.code})`}${result.stderr.trim() ? `: ${result.stderr.trim()}` : ''}`)
-}
-
-async function hashFile(filename) {
-  const hash = createHash('sha256')
-  for await (const chunk of createReadStream(filename)) hash.update(chunk)
-  return hash.digest('hex')
 }
 
 export async function renderScene(scenePath, options = {}) {
@@ -144,7 +138,7 @@ export async function renderScene(scenePath, options = {}) {
       if (writeError) throw writeError
       timings.encodeMs = performance.now() - encodeStarted
       const hashStarted = performance.now()
-      outputSha256 = await hashFile(output)
+      outputSha256 = sha256FileStream(output)
       timings.hashMs = performance.now() - hashStarted
     }
     const report = { schemaVersion: 1, scene: sceneFile, meta, output, outputSha256, style: { id: style.id, sha256: style.sha256, source: style.source }, engine: { requested: engine.requested, details: engine.details, gpuDetails: engine.gpuDetails, gpuError: engine.gpuError, reason: engine.reason }, encoder, priorityError, memory, frames, contactSheet: options.contactSheet ? path.resolve(options.contactSheet) : null, snapshotsOnly, timings, elapsedMs: Date.now() - started }

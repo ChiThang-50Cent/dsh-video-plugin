@@ -14,20 +14,12 @@
 import { createHash } from 'node:crypto'
 import fs from 'node:fs'
 import path from 'node:path'
-import { episodeContext, episodeDataRoot } from './episode-artifacts.mjs'
+import { episodeContext, episodeDataRoot, readLabeledJson } from './episode-artifacts.mjs'
 
 export const VOICE_ID = /^[a-z][a-z0-9-]{0,63}$/
 
 const isObject = (value) => value !== null && typeof value === 'object' && !Array.isArray(value)
 const nonEmpty = (value) => typeof value === 'string' && value.trim().length > 0
-
-function readJson(file, label) {
-  try {
-    return JSON.parse(fs.readFileSync(file, 'utf8'))
-  } catch (error) {
-    throw new Error(`${label} is not readable JSON: ${error.message}`)
-  }
-}
 
 /** Every structural problem in a parsed voice.json; empty when usable. */
 export function voicePackageErrors(voice, packageDir) {
@@ -73,7 +65,7 @@ export function loadVoicePackage(id, dataRoot) {
   const realDir = fs.realpathSync(dir)
   const library = fs.realpathSync(path.join(dataRoot, 'library', 'voices'))
   if (!realDir.startsWith(`${library}${path.sep}`)) throw new Error(`voice package "${id}" escapes the voices library`)
-  const voice = readJson(file, `voice package ${id}`)
+  const voice = readLabeledJson(file, `voice package ${id}`)
   const errors = voicePackageErrors(voice, realDir)
   if (voice.id !== undefined && voice.id !== id) errors.push(`id "${voice.id}" does not match its directory "${id}"`)
   if (errors.length) throw new Error(`voice package "${id}" is invalid: ${errors.join('; ')}`)

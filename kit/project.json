@@ -4,8 +4,6 @@
   "slug": "example-series",
   "visualStyle": "default",
   "episodesDir": "episodes",
-  "renderer": "skia-canvas",
-  "tts": "auto",
   "sourcePolicy": "original-or-attributed",
   "styleRefs": [],
   "defaultMode": "narrated"

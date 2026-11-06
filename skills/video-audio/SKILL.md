@@ -51,7 +51,7 @@ node <studio>/scripts/synthesize-narration.mjs <episode> [--voice-package <id>] 
 - Do not write per-segment shell loops around `omnivoice-infer`: each process reloads the model (about 5 s per call on an RTX 3060).
 - Inspect the voice reference for readability, duration, sample rate, silence and clipping. Language/timbre suitability still needs listening.
 - Run TTS/ASR through bounded jobs with a timeout and explicit retry policy (`scripts/lib/bounded.mjs`). Do not retry forever or hide a failure.
-- Record provider, command/version, device, voice/model, settings, sample path/result and environment in `audio/manifest.json`.
+- `synthesize-narration` records provider, interpreter, version, device, model, voice package/reference and settings in `audio/manifest.json`; keep the preflight report (sample path/result) beside it when a release needs that evidence.
 
 ## Segment without rewriting
 
@@ -109,5 +109,5 @@ node <studio>/scripts/qa-audio.mjs <episode-dir> --segments audio/segments.json 
 2. Verify sample rate, channels, peak levels, audible samples, clipping, long silence and numeric speech pronunciation. Unknown engines are reported as unknown.
 3. Measure every WAV in seconds and build `timeline.json` from measured durations plus authored pauses/transitions. Word-count estimates are planning-only.
 4. Music/SFX need attribution/license and suitable loudness; keep separate stems. No copyrighted media without authorization.
-5. Output `audio/manifest.json` with `narrationSha256`, segment IDs, engine identity, fingerprints, paths, hashes, measured durations, subtitle cues, QA summary and any `stale` marker. Release rejects a manifest that cannot bind the audio to the frozen script. Do not regenerate unchanged audio during scene or layout edits.
+5. `audio/manifest.json` carries `narrationSha256`, engine identity, and per chunk the segment id, fingerprint, path, hash and measured duration, plus any `stale` marker; audio QA lives in `qa-audio` output, not the manifest. Release rejects a manifest that cannot bind the audio to the frozen script. Do not regenerate unchanged audio during scene or layout edits.
 Each chunk must identify its approved segment (`segmentId` or matching `id`), include a SHA-256 and measured duration, and contain a probeable audio stream. Exactly one chunk is required per approved segment.

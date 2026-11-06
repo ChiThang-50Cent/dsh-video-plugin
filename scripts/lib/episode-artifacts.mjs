@@ -8,13 +8,13 @@ export function resolveProductionMode(root, override) {
     ...persisted,
     mode: override ?? persisted.mode,
     source: override === undefined ? persisted.source : 'override',
-    ...(override !== undefined && persisted.mode !== undefined && persisted.source !== 'default' && persisted.source !== 'legacy-inference' && override !== persisted.mode
+    ...(override !== undefined && persisted.mode !== undefined && persisted.source !== 'default' && override !== persisted.mode
       ? { conflict: `production mode override ${override} conflicts with persisted mode ${persisted.mode}` }
       : {}),
   }
 }
 
-function readJson(file, label) {
+export function readLabeledJson(file, label) {
   try {
     return JSON.parse(readFileSync(file, 'utf8'))
   } catch (error) {
@@ -31,9 +31,9 @@ export function episodeDataRoot(episodeRoot) {
 export function episodeContext(episodeRoot) {
   const projectDir = path.resolve(episodeRoot, '..', '..')
   const dataRoot = episodeDataRoot(episodeRoot)
-  const production = readJson(path.join(episodeRoot, 'production.json'), 'production.json')
+  const production = readLabeledJson(path.join(episodeRoot, 'production.json'), 'production.json')
   const projectFile = path.join(projectDir, 'project.json')
-  const project = existsSync(projectFile) ? readJson(projectFile, 'project.json') : {}
+  const project = existsSync(projectFile) ? readLabeledJson(projectFile, 'project.json') : {}
   return { dataRoot, projectDir, production, project }
 }
 

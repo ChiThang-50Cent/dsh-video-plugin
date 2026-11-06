@@ -38,7 +38,7 @@ import { applyVoicePackage, loadVoicePackage } from './lib/voice.mjs'
 import { applyTtsConfig, readTtsConfig } from './lib/tts-config.mjs'
 import { resolveDataRoot } from './studio-paths.mjs'
 
-export const PROVIDER_DEFINITIONS = {
+const PROVIDER_DEFINITIONS = {
   'espeak-ng': {
     command: 'espeak-ng',
     versionArgs: ['--version'],

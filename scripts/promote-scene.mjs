@@ -21,8 +21,9 @@ import fs from 'node:fs'
 import path from 'node:path'
 import os from 'node:os'
 import { pathToFileURL } from 'node:url'
-import { createHash, randomUUID } from 'node:crypto'
+import { randomUUID } from 'node:crypto'
 import { codeRoot as defaultCodeRoot, ensureWorkspace, resolveDataRoot, resolveStudioPaths } from './studio-paths.mjs'
+import { sha256File } from './lib/narration-model.mjs'
 
 const ID = /^[a-z][a-z0-9-]{3,}$/
 const SOURCE_EXT = new Set(['.js', '.mjs', '.cjs', '.jsx', '.ts', '.tsx', '.html', '.css', '.json', '.vue', '.svelte', '.py'])
@@ -53,10 +54,6 @@ function parseArgs(argv) {
   }
   ;[args.id, args.scene, args.preview, args.qa] = positional
   return args
-}
-
-function sha256(file) {
-  return createHash('sha256').update(fs.readFileSync(file)).digest('hex')
 }
 
 function realpathInside(root, file) {
@@ -254,9 +251,9 @@ export function promoteScene(options) {
     fs.copyFileSync(resolved[1], path.join(staging, previewName))
     fs.copyFileSync(resolved[2], path.join(staging, 'qa.json'))
     const hashes = {
-      source: sha256(path.join(staging, sourceName)),
-      preview: sha256(path.join(staging, previewName)),
-      qa: sha256(path.join(staging, 'qa.json')),
+      source: sha256File(path.join(staging, sourceName)),
+      preview: sha256File(path.join(staging, previewName)),
+      qa: sha256File(path.join(staging, 'qa.json')),
     }
     const backend = options.backend ?? (typeof qa?.backend === 'string' && qa.backend.length > 0 ? qa.backend : 'unknown')
     const tags = typeof options.tags === 'string'

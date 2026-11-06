@@ -15,9 +15,7 @@ import { createHash } from 'node:crypto'
 import path from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { codeRoot as defaultCodeRoot, ensureWorkspace, resolveDataRoot, resolveStudioPaths } from './studio-paths.mjs'
-import { parseNarration } from './lib/narration-model.mjs'
-
-export const MODES = ['narrated', 'silent', 'text-only', 'mixed']
+import { MODES, parseNarration } from './lib/narration-model.mjs'
 
 const SLUG = /^[a-z0-9]+(?:-[a-z0-9]+)*$/
 const EPISODE = /^ep-[0-9]{3,5}$/

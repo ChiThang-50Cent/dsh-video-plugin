@@ -55,7 +55,7 @@ function decompress(file, buffer) {
   return result.stdout
 }
 
-export function readSessionFile(file) {
+function readSessionFile(file) {
   const compressed = fs.readFileSync(file)
   const raw = decompress(file, compressed).toString('utf8')
   const events = []
