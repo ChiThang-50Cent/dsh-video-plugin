@@ -9,7 +9,7 @@
 | `refs/` | Reference frames, contact sheet and palette from `scripts/extract-style-refs.mjs`, with a rights note. Inspiration only; never copy a third-party design one-for-one. |
 | `notes.md` | What the look is for, what to avoid, and why tokens were chosen. |
 
-Every style defines the core colours `background`, `ink`, `muted`, `line`, `accent`, `structure`, `success` and `error`, so any scene renders under any style; add more names freely. Typography roles are free-form; `headline`, `body`, `label` and `data` are conventional and `theme.font(role)` falls back to `body`. Ids are lowercase slugs (`[a-z][a-z0-9-]*`).
+Every style defines the core colours `background`, `ink`, `muted`, `line`, `accent`, `structure`, `success` and `error`, so any scene renders under any style; add more names freely. At least one typography role is required; roles are free-form, with `headline`, `body`, `label` and `data` conventional. `theme.font(role)` falls back to `body` or the first role. Ids are lowercase slugs (`[a-z][a-z0-9-]*`, at most 64 characters).
 
 ## Where a style is found
 
@@ -29,11 +29,11 @@ node scripts/new-visual-style.mjs <new-id> --from <existing-id> [--name "..."]
 node scripts/extract-style-refs.mjs <id> <video-or-image...> --rights "<who owns it, how it may be used>" [--at 12,40,95] [--count 6]
 ```
 
-`new-visual-style` copies `style.json`, `fonts/` and `notes.md` (not `refs/`) from `--from` (default `default`) and refuses an existing id. `extract-style-refs` reads local files only, writes into an existing package and records the rights note; it does not change tokens. Read `refs/contact.png` and the palette (mean colour and share per cluster) in `refs/refs.json`, then set the tokens yourself.
+`new-visual-style` copies `style.json`, declared font files, `fonts/` and `notes.md` (not other `refs/` contents) from `--from` (default `default`) and refuses an existing id. `extract-style-refs` reads local files only, writes into an existing package and records the rights note; it does not change tokens. Read `refs/contact.png` and the palette (mean colour and share per cluster) in `refs/refs.json`, then set the tokens yourself.
 
 ## Edit
 
-Edit `style.json` (and `fonts/`, `notes.md`). Validation runs on every render and fails with the reason: wrong `schemaVersion`, id/directory mismatch, missing core colour, typography role without `family`, non-positive size, font file missing or outside the package. The style hash covers `style.json` and every declared font file, so after an edit:
+Edit `style.json` (and `fonts/`, `notes.md`). Validation runs on every render and fails with the reason: wrong `schemaVersion`, id/directory mismatch, missing core colour, no typography roles, typography role without `family`, non-positive size, font file missing or outside the package (including after symlink resolution). Declared fonts may live anywhere inside the package. The style hash covers `style.json` and every declared font file, so after an edit:
 
 - `render-episode` re-renders exactly the scenes rendered under the old hash (the cache key includes it);
 - release fails until each `qa/scene/<id>.json` records the new `styleSha256` (re-run scene QA);

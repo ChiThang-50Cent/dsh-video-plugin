@@ -5,8 +5,8 @@
  * Usage:
  *   node scripts/new-visual-style.mjs <id> [--from <id>] [--name <text>] [--data-root <dir>] [--json]
  *
- * Copies style.json, fonts/ and notes.md from `--from` (default: `default`),
- * found in the workspace library or the bundled built-ins, into
+ * Copies style.json, declared font files, fonts/ and notes.md from `--from`
+ * (default: `default`), found in the workspace library or bundled built-ins, into
  * `<dataRoot>/library/visual-styles/<id>/`. Reference frames (refs/) belong to
  * the source look and are not copied. Never overwrites an existing package.
  */
@@ -29,7 +29,12 @@ export function newVisualStyle(id, options = {}) {
   try {
     const style = { ...from.style, id, name: options.name ?? `${from.style.name ?? from.id} (copy)`, derivedFrom: from.id }
     fs.writeFileSync(path.join(staging, 'style.json'), `${JSON.stringify(style, null, 2)}\n`)
-    if (fs.existsSync(path.join(from.dir, 'fonts'))) fs.cpSync(path.join(from.dir, 'fonts'), path.join(staging, 'fonts'), { recursive: true })
+    if (fs.existsSync(path.join(from.dir, 'fonts'))) fs.cpSync(path.join(from.dir, 'fonts'), path.join(staging, 'fonts'), { recursive: true, dereference: true })
+    for (const font of from.fonts) {
+      const target = path.join(staging, font.file)
+      fs.mkdirSync(path.dirname(target), { recursive: true })
+      fs.copyFileSync(font.path, target)
+    }
     const notes = path.join(from.dir, 'notes.md')
     fs.writeFileSync(path.join(staging, 'notes.md'), fs.existsSync(notes)
       ? `${fs.readFileSync(notes, 'utf8').trimEnd()}\n\n<!-- Copied from "${from.id}"; rewrite for "${id}". -->\n`

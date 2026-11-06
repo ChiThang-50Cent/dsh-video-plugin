@@ -18,7 +18,7 @@ import { fileURLToPath } from 'node:url'
 export const DEFAULT_VISUAL_STYLE = 'default'
 /** Colour names every look defines, so any scene renders correctly under any style. */
 export const CORE_COLORS = ['background', 'ink', 'muted', 'line', 'accent', 'structure', 'success', 'error']
-const ID = /^[a-z][a-z0-9-]{0,63}$/
+export const VISUAL_STYLE_ID = /^[a-z][a-z0-9-]{0,63}$/
 const codeRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..', '..')
 
 const isObject = (value) => value !== null && typeof value === 'object' && !Array.isArray(value)
@@ -58,7 +58,7 @@ export function visualStyleErrors(style, packageDir) {
   const errors = []
   if (!isObject(style)) return ['style.json must be an object']
   if (style.schemaVersion !== 1) errors.push('schemaVersion must be 1')
-  if (typeof style.id !== 'string' || !ID.test(style.id)) errors.push('id must be a lowercase slug')
+  if (typeof style.id !== 'string' || !VISUAL_STYLE_ID.test(style.id)) errors.push('id must be a lowercase slug')
   for (const key of ['colors', 'typography']) {
     if (!isObject(style[key])) errors.push(`${key} must be an object`)
   }
@@ -68,6 +68,7 @@ export function visualStyleErrors(style, packageDir) {
   if (isObject(style.colors)) {
     for (const name of CORE_COLORS) if (!(name in style.colors)) errors.push(`colors.${name} is required`)
   }
+  if (isObject(style.typography) && !Object.keys(style.typography).length) errors.push('typography must define at least one role')
   for (const [role, value] of Object.entries(isObject(style.typography) ? style.typography : {})) {
     if (!isObject(value) || typeof value.family !== 'string' || !value.family.trim()) errors.push(`typography.${role}.family is required`)
     else if (value.size !== undefined && !(Number.isFinite(value.size) && value.size > 0)) errors.push(`typography.${role}.size must be a positive number`)
@@ -79,9 +80,12 @@ export function visualStyleErrors(style, packageDir) {
         const label = `fonts[${index}]`
         if (!isObject(font) || typeof font.family !== 'string' || !font.family.trim()) { errors.push(`${label}.family is required`); continue }
         if (typeof font.file !== 'string' || !font.file || path.isAbsolute(font.file)) { errors.push(`${label}.file must be a package-relative path`); continue }
-        const file = path.resolve(packageDir, font.file)
-        if (!file.startsWith(`${packageDir}${path.sep}`)) errors.push(`${label}.file escapes the style package`)
-        else if (!fs.existsSync(file) || !fs.statSync(file).isFile()) errors.push(`${label}.file not found: ${font.file}`)
+        const dir = fs.existsSync(packageDir) ? fs.realpathSync(packageDir) : path.resolve(packageDir)
+        const file = path.resolve(dir, font.file)
+        if (!file.startsWith(`${dir}${path.sep}`)) errors.push(`${label}.file escapes the style package`)
+        else if (!fs.existsSync(file)) errors.push(`${label}.file not found: ${font.file}`)
+        else if (!fs.realpathSync(file).startsWith(`${dir}${path.sep}`)) errors.push(`${label}.file escapes the style package`)
+        else if (!fs.statSync(file).isFile()) errors.push(`${label}.file not found: ${font.file}`)
       }
     }
   }
@@ -90,7 +94,7 @@ export function visualStyleErrors(style, packageDir) {
 
 /** Package directory for `id`: the workspace library first, then the bundled built-in. */
 export function visualStylePackage(id, dataRoot) {
-  if (typeof id !== 'string' || !ID.test(id)) throw new Error(`visual style id must be a lowercase slug: ${JSON.stringify(id)}`)
+  if (typeof id !== 'string' || !VISUAL_STYLE_ID.test(id)) throw new Error(`visual style id must be a lowercase slug: ${JSON.stringify(id)}`)
   const candidates = [dataRoot && path.join(dataRoot, 'library', 'visual-styles', id), path.join(codeRoot, 'library', 'visual-styles', id)].filter(Boolean)
   const dir = candidates.find((candidate) => fs.existsSync(path.join(candidate, 'style.json')))
   if (dir === undefined) throw new Error(`visual style "${id}" not found; create library/visual-styles/${id}/style.json (scripts/new-visual-style.mjs)`)

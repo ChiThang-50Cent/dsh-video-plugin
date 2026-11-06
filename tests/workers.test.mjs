@@ -175,3 +175,50 @@ test('wave CLI attributes concurrent changes to exactly one assigned worker', (t
   fs.writeFileSync(results[0], JSON.stringify(bad))
   assert.notEqual(run().status, 0)
 })
+
+test('wave maps task directories independently of scene ids', (t) => {
+  const episode = temp(t)
+  const cli = path.resolve('scripts/validate-workers.mjs')
+  const call = (...args) => spawnSync(process.execPath, [cli, ...args], { encoding: 'utf8' })
+  const dir = path.join(episode, 'work', 'task-one')
+  fs.mkdirSync(dir, { recursive: true })
+  const snapshot = call('snapshot', episode, '--task', 'wave', '--json')
+  const hash = JSON.parse(snapshot.stdout).data.baselineSha256
+  const baseline = path.join(episode, 'qa', 'worker-baselines', 'wave.json')
+  fs.writeFileSync(path.join(dir, 'scene.mjs'), 'scene')
+  const result = path.join(dir, 'scene-result.json')
+  fs.writeFileSync(result, JSON.stringify({ sceneId: 'one', status: 'PASS', changedFiles: ['work/task-one/scene.mjs', 'work/task-one/scene-result.json'] }))
+  const run = () => call('wave', episode, '--baseline', baseline, '--baseline-sha256', hash, '--result', result, '--allow', 'work/task-one/**', '--allow', 'work/other/**')
+  const valid = run()
+  assert.equal(valid.status, 0, valid.stdout + valid.stderr)
+  fs.mkdirSync(path.join(episode, 'work', 'other'))
+  fs.writeFileSync(path.join(episode, 'work', 'other', 'scene.mjs'), 'other')
+  fs.writeFileSync(result, JSON.stringify({ sceneId: 'one', status: 'PASS', changedFiles: ['work/task-one/scene.mjs', 'work/task-one/scene-result.json', 'work/other/scene.mjs'] }))
+  assert.notEqual(run().status, 0)
+})
+
+test('baseline detects an unreported __proto__ file', (t) => {
+  const episode = temp(t)
+  fs.mkdirSync(path.join(episode, 'work', 's01'), { recursive: true })
+  const cli = path.resolve('scripts/validate-workers.mjs')
+  const snapshot = spawnSync(process.execPath, [cli, 'snapshot', episode, '--task', 's01', '--json'], { encoding: 'utf8' })
+  const hash = JSON.parse(snapshot.stdout).data.baselineSha256
+  const baseline = path.join(episode, 'qa', 'worker-baselines', 's01.json')
+  fs.writeFileSync(path.join(episode, '__proto__'), 'unexpected')
+  const check = validateWorkerResult(episode, { sceneId: 's01', status: 'PASS', changedFiles: [] }, { baseline, baselineSha256: hash })
+  assert.match(check.errors.join('\n'), /unreported filesystem change: __proto__/)
+})
+
+test('baseline validation accepts an episode reached through a symlink', (t) => {
+  const root = temp(t)
+  const episode = path.join(root, 'episode')
+  fs.mkdirSync(path.join(episode, 'work', 's01'), { recursive: true })
+  const link = path.join(root, 'link')
+  fs.symlinkSync(episode, link)
+  const cli = path.resolve('scripts/validate-workers.mjs')
+  const snapshot = spawnSync(process.execPath, [cli, 'snapshot', episode, '--task', 's01', '--json'], { encoding: 'utf8' })
+  const hash = JSON.parse(snapshot.stdout).data.baselineSha256
+  fs.writeFileSync(path.join(episode, 'work', 's01', 'scene.mjs'), 'scene')
+  const check = validateWorkerResult(link, { sceneId: 's01', status: 'PASS', changedFiles: ['work/s01/scene.mjs'] }, { baseline: path.join(link, 'qa', 'worker-baselines', 's01.json'), baselineSha256: hash })
+  assert.equal(check.ok, true, check.errors.join('\n'))
+})

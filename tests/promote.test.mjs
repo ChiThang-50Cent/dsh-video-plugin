@@ -109,12 +109,31 @@ test('concurrent CLI promotions retain both catalog entries', async (t) => {
   assert.deepEqual(catalog.entries.map((entry) => entry.id).sort(), ['example-one', 'example-two'])
 })
 
-test('promotion recovers a lock owned by a dead local process', (t) => {
+test('concurrent promotions refuse a stale lock until manually removed', async (t) => {
   const { root, files } = setup(t)
   const library = path.join(root, 'library')
   fs.mkdirSync(library, { recursive: true })
-  fs.writeFileSync(path.join(library, '.catalog.lock'), JSON.stringify({ pid: 2147483647, host: os.hostname(), createdAt: new Date(0).toISOString() }))
-  const result = promoteScene({ id: 'recovered-example', scene: files.scene, preview: files.preview, qa: files.qa, dataRoot: root })
-  assert.equal(result.ok, true, result.errors.join('\n'))
-  assert.equal(fs.existsSync(path.join(library, '.catalog.lock')), false)
+  const lock = path.join(library, '.catalog.lock')
+  const stale = JSON.stringify({ pid: 2147483647, host: os.hostname(), createdAt: new Date(0).toISOString() })
+  fs.writeFileSync(lock, stale)
+  const cli = path.resolve('scripts/promote-scene.mjs')
+  const run = (id) => new Promise((resolve, reject) => {
+    const child = spawn(process.execPath, [cli, id, files.scene, files.preview, files.qa, '--data-root', root])
+    let output = ''
+    child.stdout.on('data', (chunk) => { output += chunk })
+    child.stderr.on('data', (chunk) => { output += chunk })
+    child.on('error', reject)
+    child.on('close', (status) => resolve({ status, output }))
+  })
+  const refused = await Promise.all([run('example-one'), run('example-two')])
+  for (const result of refused) {
+    assert.notEqual(result.status, 0)
+    assert.match(result.output, /remove.*lock/i)
+  }
+  assert.equal(fs.readFileSync(lock, 'utf8'), stale)
+  fs.unlinkSync(lock)
+  const results = await Promise.all([run('example-one'), run('example-two')])
+  for (const result of results) assert.equal(result.status, 0, result.output)
+  const catalog = JSON.parse(fs.readFileSync(path.join(library, 'catalog.json'), 'utf8'))
+  assert.deepEqual(catalog.entries.map((entry) => entry.id).sort(), ['example-one', 'example-two'])
 })

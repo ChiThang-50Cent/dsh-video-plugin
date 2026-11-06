@@ -16,6 +16,7 @@ test('runner inserts existing GPU devices before the first separator', (t) => {
   fs.writeFileSync(path.join(devices, 'nvidia0'), '')
   fs.writeFileSync(path.join(devices, 'nvidiactl'), '')
   fs.mkdirSync(path.join(devices, 'dri'))
+  fs.writeFileSync(path.join(devices, 'dxg'), '')
   const fake = path.join(dir, 'bwrap')
   fs.writeFileSync(fake, '#!/bin/sh\nprintf "%s\\n" "$@"\n', { mode: 0o755 })
   const result = spawnSync(wrapper, ['--ro-bind', '/', '/', '--', 'echo', '--', 'hello world'], {
@@ -27,6 +28,7 @@ test('runner inserts existing GPU devices before the first separator', (t) => {
     '--dev-bind-try', path.join(devices, 'nvidia0'), path.join(devices, 'nvidia0'),
     '--dev-bind-try', path.join(devices, 'nvidiactl'), path.join(devices, 'nvidiactl'),
     '--dev-bind-try', path.join(devices, 'dri'), path.join(devices, 'dri'),
+    '--dev-bind-try', path.join(devices, 'dxg'), path.join(devices, 'dxg'),
     '--', 'echo', '--', 'hello world',
   ])
 })

@@ -13,11 +13,13 @@
  * (sources, rights note, frame times, dominant colours). The palette is a hint
  * for editing style.json, not a design to copy.
  */
+import { createHash } from 'node:crypto'
 import fs from 'node:fs'
 import path from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { runBounded } from './lib/bounded.mjs'
 import { resolveDataRoot } from './studio-paths.mjs'
+import { VISUAL_STYLE_ID } from './lib/render/theme.mjs'
 
 const IMAGE = /\.(png|jpe?g|webp|bmp|gif)$/i
 const TIMEOUT_MS = 120_000
@@ -76,9 +78,15 @@ export async function extractStyleRefs(id, inputs, options = {}) {
   if (typeof options.rights !== 'string' || !options.rights.trim()) throw new Error('--rights is required: who owns the reference and how it may be used')
   if (!inputs.length) throw new Error('at least one input file is required')
   const dataRoot = path.resolve(options.dataRoot ?? resolveDataRoot().dataRoot)
-  const styleDir = path.join(dataRoot, 'library', 'visual-styles', id)
+  if (typeof id !== 'string' || !VISUAL_STYLE_ID.test(id)) throw new Error(`visual style id must be a lowercase slug: ${JSON.stringify(id)}`)
+  const library = path.join(dataRoot, 'library', 'visual-styles')
+  const styleDir = path.join(library, id)
   if (!fs.existsSync(path.join(styleDir, 'style.json'))) throw new Error(`visual style "${id}" not found in the workspace; create it with scripts/new-visual-style.mjs first`)
-  const refsDir = path.join(styleDir, 'refs')
+  const canonicalLibrary = fs.realpathSync(library)
+  const canonicalStyle = fs.realpathSync(styleDir)
+  if (!canonicalStyle.startsWith(`${canonicalLibrary}${path.sep}`)) throw new Error('style package escapes the visual styles library')
+  const refsDir = path.join(canonicalStyle, 'refs')
+  if (fs.existsSync(refsDir) && !fs.realpathSync(refsDir).startsWith(`${canonicalStyle}${path.sep}`)) throw new Error('refs directory escapes the style package')
   fs.mkdirSync(refsDir, { recursive: true })
   const indexFile = path.join(refsDir, 'refs.json')
   const index = fs.existsSync(indexFile) ? JSON.parse(fs.readFileSync(indexFile, 'utf8')) : { schemaVersion: 1, sources: [] }
@@ -88,7 +96,7 @@ export async function extractStyleRefs(id, inputs, options = {}) {
   for (const input of inputs) {
     const file = path.resolve(input)
     if (!fs.existsSync(file) || !fs.statSync(file).isFile()) throw new Error(`input is not a local file: ${input}`)
-    const base = slug(file)
+    const base = `${slug(file)}-${createHash('sha256').update(file).digest('hex').slice(0, 16)}`
     const frames = []
     if (IMAGE.test(file)) {
       const out = path.join(refsDir, `${base}.png`)

@@ -14,9 +14,11 @@ export function resolveProductionMode(root, override) {
   }
 }
 
+const DEFAULT_MASTERS = ['exports/master.mp4', 'exports/master.mov', 'exports/master.webm']
+
 export function findMaster(root, production, timeline) {
   const configured = [production?.finalOutput, timeline?.finalOutput].find((value) => typeof value === 'string' && value.length > 0)
-  const candidates = configured === undefined ? ['exports/master.mp4', 'exports/master.mov', 'exports/master.webm'] : [configured]
+  const candidates = configured === undefined ? DEFAULT_MASTERS : [configured]
   for (const relative of candidates) {
     if (typeof relative !== 'string' || !relative) continue
     const absolute = path.resolve(root, relative)
@@ -25,4 +27,15 @@ export function findMaster(root, production, timeline) {
     if (existsSync(absolute) && statSync(absolute).isFile()) return { path: absolute, relative: rel }
   }
   return null
+}
+
+export function findExistingMasters(root, production, timeline) {
+  const configured = [production?.finalOutput, timeline?.finalOutput].find((value) => typeof value === 'string' && value.length > 0)
+  const candidates = configured === undefined ? DEFAULT_MASTERS : [configured, ...DEFAULT_MASTERS]
+  const masters = new Map()
+  for (const finalOutput of candidates) {
+    const master = findMaster(root, { finalOutput })
+    if (master !== null) masters.set(master.path, master)
+  }
+  return [...masters.values()]
 }

@@ -17,7 +17,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { NARRATED_MODES, isPlainObject, readProductionMode, sha256File, sha256Text } from './lib/narration-model.mjs'
-import { findMaster } from './lib/episode-artifacts.mjs'
+import { findExistingMasters } from './lib/episode-artifacts.mjs'
 
 function parseArgs(argv) {
   const args = { episode: undefined, from: undefined, reason: undefined, allowReleased: false, json: false }
@@ -94,7 +94,8 @@ export function reviseNarration(options) {
 
   const production = fs.existsSync(path.join(root, 'production.json')) ? readJson(path.join(root, 'production.json')) : {}
   const timeline = fs.existsSync(path.join(root, 'timeline.json')) ? readJson(path.join(root, 'timeline.json')) : {}
-  const released = findMaster(root, production, timeline)?.path
+  const masters = findExistingMasters(root, production, timeline)
+  const released = masters[0]?.path
   if (released !== undefined && options.allowReleased !== true) {
     throw new Error(`a released master exists (${path.relative(root, released)}); pass --allow-released and version the master before changing the approved narration`)
   }
@@ -136,6 +137,7 @@ export function reviseNarration(options) {
       stale: true,
       reason: 'narration revised intentionally; the existing master was built from the previous approved script',
       master: path.relative(root, released),
+      masters: masters.map((master) => master.relative),
       previousNarrationSha256: oldSha,
       newNarrationSha256: newSha,
       revision,

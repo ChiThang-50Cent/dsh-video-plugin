@@ -149,3 +149,42 @@ test('all supported released masters require authorization and are marked stale'
     assert.equal(JSON.parse(fs.readFileSync(path.join(episode.dir, 'exports/master.stale.json'))).master, relative)
   }
 })
+
+test('revision protects all existing masters when the configured output is missing', (t) => {
+  const { episode } = setup(t)
+  const productionPath = path.join(episode.dir, 'production.json')
+  const production = JSON.parse(fs.readFileSync(productionPath, 'utf8'))
+  production.finalOutput = 'exports/master-v2.mp4'
+  fs.writeFileSync(productionPath, JSON.stringify(production))
+  fs.mkdirSync(path.join(episode.dir, 'exports'), { recursive: true })
+  for (const name of ['master.mp4', 'master.mov', 'master.webm']) {
+    fs.writeFileSync(path.join(episode.dir, 'exports', name), 'released master')
+  }
+  const next = path.join(episode.dir, 'next.md')
+  fs.writeFileSync(next, `${NARRATION}\nNew ending.\n`)
+  assert.throws(() => reviseNarration({ episodeDir: episode.dir, from: next, reason: 'Correction' }), /released master/)
+  const result = reviseNarration({ episodeDir: episode.dir, from: next, reason: 'Correction', allowReleased: true })
+  const marker = JSON.parse(fs.readFileSync(path.join(episode.dir, 'exports/master.stale.json'), 'utf8'))
+  assert.equal(result.releasedMaster, 'exports/master.mp4')
+  assert.equal(marker.master, 'exports/master.mp4')
+  assert.deepEqual(marker.masters, ['exports/master.mp4', 'exports/master.mov', 'exports/master.webm'])
+})
+
+test('revision records the configured master alongside default masters without duplicates', (t) => {
+  const { episode } = setup(t)
+  const productionPath = path.join(episode.dir, 'production.json')
+  const production = JSON.parse(fs.readFileSync(productionPath, 'utf8'))
+  production.finalOutput = 'exports/custom.mp4'
+  fs.writeFileSync(productionPath, JSON.stringify(production))
+  fs.mkdirSync(path.join(episode.dir, 'exports'), { recursive: true })
+  for (const name of ['custom.mp4', 'master.mp4']) {
+    fs.writeFileSync(path.join(episode.dir, 'exports', name), 'released master')
+  }
+  const next = path.join(episode.dir, 'next.md')
+  fs.writeFileSync(next, `${NARRATION}\nNew ending.\n`)
+  assert.throws(() => reviseNarration({ episodeDir: episode.dir, from: next, reason: 'Correction' }), /released master/)
+  reviseNarration({ episodeDir: episode.dir, from: next, reason: 'Correction', allowReleased: true })
+  const marker = JSON.parse(fs.readFileSync(path.join(episode.dir, 'exports/master.stale.json'), 'utf8'))
+  assert.equal(marker.master, 'exports/custom.mp4')
+  assert.deepEqual(marker.masters, ['exports/custom.mp4', 'exports/master.mp4'])
+})

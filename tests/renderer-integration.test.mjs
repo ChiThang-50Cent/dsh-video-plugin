@@ -97,6 +97,31 @@ test('episode renders contiguous scene fixture into one master', async (t) => {
   await assert.rejects(renderEpisode(dir, { engine: 'cpu', encoder: 'libx264', minFreeMemMiB: 0 }), /contiguous/i)
 })
 
+test('compact imports invalidate the scene cache when a dependency changes', async (t) => {
+  if (!mediaAvailable(t)) return
+  const { renderEpisode } = await import('../scripts/render-episode.mjs')
+  const dir = temp(t)
+  fs.mkdirSync(path.join(dir, 'audio'))
+  fs.writeFileSync(path.join(dir, 'production.json'), JSON.stringify({ mode: 'silent', voiceOver: false }))
+  fs.writeFileSync(path.join(dir, 'audio', 'manifest.json'), JSON.stringify({ chunks: [] }))
+  fs.writeFileSync(path.join(dir, 'lib.mjs'), "export const color = '#123456'\n")
+  fs.writeFileSync(path.join(dir, 'one.mjs'), "import{color}from'./lib.mjs'\nexport const meta={id:'one',durationSec:0.5,width:320,height:180,fps:10}\nexport function draw(ctx){ctx.fillStyle=color;ctx.fillRect(0,0,320,180)}\n")
+  fs.writeFileSync(path.join(dir, 'timeline.json'), JSON.stringify({ durationSec: 0.5, scenes: [{ id: 'one', source: 'one.mjs', startSec: 0, durationSec: 0.5 }] }))
+  const options = { engine: 'cpu', encoder: 'libx264', threads: 1, minFreeMemMiB: 0, overwrite: true }
+  await renderEpisode(dir, options)
+  const hit = await renderEpisode(dir, options)
+  assert.equal(hit.scenes[0].cache, 'hit')
+  const cached = path.join(dir, '.cache', 'render', `${hit.scenes[0].cacheKey}.mp4`)
+  fs.unlinkSync(cached)
+  fs.symlinkSync(hit.output, cached)
+  assert.equal((await renderEpisode(dir, options)).scenes[0].cache, 'miss')
+  fs.appendFileSync(path.join(dir, 'lib.mjs'), '// changed\n')
+  assert.equal((await renderEpisode(dir, options)).scenes[0].cache, 'miss')
+  fs.appendFileSync(path.join(dir, 'one.mjs'), "\nconst load = name => import('./' + name)\n")
+  assert.equal((await renderEpisode(dir, options)).scenes[0].cache, 'miss')
+  assert.equal((await renderEpisode(dir, options)).scenes[0].cache, 'miss')
+})
+
 test('parallel episode cache tracks imported modules and normalizes narration', async (t) => {
   if (!mediaAvailable(t)) return
   const { renderEpisode } = await import('../scripts/render-episode.mjs')
@@ -108,7 +133,7 @@ test('parallel episode cache tracks imported modules and normalizes narration', 
   assert.equal(tone.status, 0, String(tone.stderr))
   fs.writeFileSync(path.join(dir, 'audio', 'manifest.json'), JSON.stringify({ chunks: [{ path: 'audio/tone.wav', durationSec: 4 }] }))
   fs.writeFileSync(path.join(dir, 'lib.mjs'), "export const color = '#123456'\n")
-  fs.writeFileSync(path.join(dir, 'one.mjs'), "import { color } from './lib.mjs'\nexport const meta = { id:'one', durationSec:2, width:320, height:180, fps:10 }\nexport function draw(ctx) { ctx.fillStyle=color; ctx.fillRect(0,0,320,180) }\n")
+  fs.writeFileSync(path.join(dir, 'one.mjs'), "import{color}from'./lib.mjs'\nexport const meta = { id:'one', durationSec:2, width:320, height:180, fps:10 }\nexport function draw(ctx) { ctx.fillStyle=color; ctx.fillRect(0,0,320,180) }\n")
   scene(path.join(dir, 'two.mjs'), 'two', 2)
   fs.writeFileSync(path.join(dir, 'timeline.json'), JSON.stringify({ durationSec: 4, scenes: [{ id: 'one', source: 'one.mjs', startSec: 0, durationSec: 2 }, { id: 'two', source: 'two.mjs', startSec: 2, durationSec: 2 }] }))
   const options = { engine: 'cpu', encoder: 'libx264', threads: 1, concurrency: 2, minFreeMemMiB: 0, overwrite: true }
@@ -122,6 +147,18 @@ test('parallel episode cache tracks imported modules and normalizes narration', 
   assert.deepEqual(second.scenes.map(item => item.cache), ['hit', 'hit'])
   assert.deepEqual([first.audio.loudness.cache, second.audio.loudness.cache], ['miss', 'hit'])
   assert.equal(second.audio.loudness.measuredIntegratedLufs, first.audio.loudness.measuredIntegratedLufs)
+  const outside = path.join(project, 'outside')
+  fs.writeFileSync(outside, 'untouched')
+  const cache = path.join(dir, '.cache', 'render')
+  const video = path.join(cache, `${first.scenes[0].cacheKey}.mp4`)
+  const audio = fs.readdirSync(cache).find(name => name.startsWith('audio-') && name.endsWith('.wav'))
+  const targets = [video, `${video}.json`, path.join(cache, audio), path.join(cache, `${audio}.json`), path.join(dir, 'reports', 'render-scenes', 'one.render.json'), second.output]
+  for (const target of targets) { fs.unlinkSync(target); fs.symlinkSync(outside, target) }
+  await assert.rejects(renderEpisode(dir, { ...options, overwrite: false }), /output already exists/i)
+  const replaced = await renderEpisode(dir, { ...options, noCache: true })
+  assert.equal(replaced.scenes[0].cache, 'miss')
+  assert.equal(fs.readFileSync(outside, 'utf8'), 'untouched')
+  for (const target of targets) assert.ok(fs.lstatSync(target).isFile())
   fs.appendFileSync(path.join(dir, 'lib.mjs'), '// changed\n')
   const louder = spawnSync('ffmpeg', ['-v', 'error', '-y', '-f', 'lavfi', '-i', 'sine=frequency=440:duration=4', '-ar', '48000', path.join(dir, 'audio', 'tone.wav')])
   assert.equal(louder.status, 0, String(louder.stderr))

@@ -17,7 +17,7 @@ const device = args[args.indexOf('--device') + 1]
 const mode = process.env.FAKE_TTS_MODE ?? 'ok'
 fs.appendFileSync(process.env.FAKE_TTS_LOG, 'spawn\\n')
 const send = (value) => process.stdout.write(JSON.stringify(value) + '\\n')
-send({ type: 'ready', device: mode === 'cpu' ? 'cpu' : device, version: 'fake-1' })
+send({ type: 'ready', device: mode === 'cpu' ? 'cpu' : device, version: process.env.FAKE_TTS_REPORTED_VERSION ?? process.env.FAKE_TTS_VERSION ?? 'fake-1' })
 let buffer = ''
 process.stdin.on('data', (data) => {
   buffer += data
@@ -27,6 +27,10 @@ process.stdin.on('data', (data) => {
     buffer = buffer.slice(index + 1)
     fs.appendFileSync(process.env.FAKE_TTS_LOG, 'say ' + request.id + '\\n')
     if (mode === 'hang') continue
+    if (mode === 'fail-second' && request.id === 'seg-002') {
+      send({ type: 'result', id: request.id, ok: false, error: 'second failed' })
+      continue
+    }
     if (mode === 'fail-once' && !fs.existsSync(process.env.FAKE_TTS_LOG + '.failed')) {
       fs.writeFileSync(process.env.FAKE_TTS_LOG + '.failed', '')
       send({ type: 'result', id: request.id, ok: false, error: 'transient' })
@@ -43,6 +47,9 @@ function setup(t, { mode = 'ok', texts = ['Một.', 'Hai.', 'Ba.'] } = {}) {
   t.after(() => {
     fs.rmSync(dir, { recursive: true, force: true })
     delete process.env.FAKE_TTS_MODE
+    delete process.env.FAKE_TTS_VERSION
+    delete process.env.FAKE_TTS_REPORTED_VERSION
+    delete process.env.FAKE_TTS_PROBE_FAIL
     delete process.env.FAKE_TTS_LOG
   })
   const episode = path.join(dir, 'ep')
@@ -57,12 +64,21 @@ function setup(t, { mode = 'ok', texts = ['Một.', 'Hai.', 'Ba.'] } = {}) {
   writeSegments(texts)
   const helper = path.join(dir, 'helper.cjs')
   fs.writeFileSync(helper, FAKE_HELPER)
+  const python = path.join(dir, 'python')
+  fs.writeFileSync(python, `#!/bin/sh
+if [ "$1" = "-c" ]; then
+  if [ -n "$FAKE_TTS_PROBE_FAIL" ]; then echo "probe failed" >&2; exit 1; fi
+  printf '%s\\n' "\${FAKE_TTS_VERSION:-fake-1}"
+  exit 0
+fi
+exec "${process.execPath}" "$@"
+`, { mode: 0o755 })
   const voiceReference = path.join(dir, 'ref.wav')
   fs.writeFileSync(voiceReference, 'reference')
   const log = path.join(dir, 'helper.log')
   process.env.FAKE_TTS_MODE = mode
   process.env.FAKE_TTS_LOG = log
-  const options = { episode, python: process.execPath, helper, model: '/models/omnivoice', device: 'cuda', voiceReference, refText: 'Câu tham chiếu.', language: 'vi', timeoutMs: 5000, overallTimeoutMs: 30000, retries: 1, segments: 'audio/segments.json', requireGpu: true }
+  const options = { episode, python, helper, model: '/models/omnivoice', device: 'cuda', voiceReference, refText: 'Câu tham chiếu.', language: 'vi', timeoutMs: 5000, overallTimeoutMs: 30000, retries: 1, segments: 'audio/segments.json', requireGpu: true }
   const calls = () => (fs.existsSync(log) ? fs.readFileSync(log, 'utf8').trim().split('\n') : [])
   return { episode, options, calls, writeSegments, manifest: () => JSON.parse(fs.readFileSync(path.join(episode, 'audio', 'manifest.json'), 'utf8')) }
 }
@@ -143,4 +159,52 @@ test('the CLI refuses a CPU device when a GPU is required', () => {
   const result = spawnSync(process.execPath, [script, '/tmp/none', '--voice-reference', 'r.wav', '--ref-text', 'x', '--device', 'cpu', '--require-gpu'], { encoding: 'utf8' })
   assert.equal(result.status, 1)
   assert.match(result.stderr, /refusing CPU fallback/)
+})
+
+test('rejects narration directories and wav targets symlinked outside the episode', async (t) => {
+  const { episode, options } = setup(t)
+  const outside = fs.mkdtempSync(path.join(os.tmpdir(), 'video-studio-outside-'))
+  t.after(() => fs.rmSync(outside, { recursive: true, force: true }))
+  const narration = path.join(episode, 'audio', 'narration')
+  fs.symlinkSync(outside, narration)
+  await assert.rejects(synthesize(options), /escapes episode/)
+  assert.deepEqual(fs.readdirSync(outside), [])
+  fs.unlinkSync(narration)
+  fs.mkdirSync(narration)
+  fs.symlinkSync(path.join(outside, 'target.wav'), path.join(narration, 'seg-001.wav'))
+  await assert.rejects(synthesize(options), /symlink/)
+  assert.deepEqual(fs.readdirSync(outside), [])
+})
+
+test('interrupted synthesis preserves unvisited cache entries and remains stale', async (t) => {
+  const { options, writeSegments, manifest } = setup(t)
+  await synthesize(options)
+  const third = manifest().chunks[2]
+  writeSegments(['edited one', 'edited two', 'Ba.'])
+  process.env.FAKE_TTS_MODE = 'fail-second'
+  await assert.rejects(synthesize({ ...options, retries: 0 }), /second failed/)
+  assert.equal(manifest().stale, true)
+  assert.deepEqual(manifest().chunks[2], third)
+  process.env.FAKE_TTS_MODE = 'ok'
+  const result = await synthesize(options)
+  assert.deepEqual([result.synthesized, result.reused], [1, 2])
+  assert.notEqual(manifest().stale, true)
+})
+
+test('helper version and helper file changes invalidate cached audio', async (t) => {
+  const { options } = setup(t)
+  await synthesize(options)
+  process.env.FAKE_TTS_VERSION = 'fake-2'
+  assert.equal((await synthesize(options)).synthesized, 3)
+  fs.appendFileSync(options.helper, '\n// changed helper\n')
+  assert.equal((await synthesize(options)).synthesized, 3)
+})
+
+test('version probe failures and mismatched worker versions fail clearly', async (t) => {
+  const { options } = setup(t)
+  process.env.FAKE_TTS_PROBE_FAIL = '1'
+  await assert.rejects(synthesize(options), /failed to probe omnivoice version:.*probe failed/)
+  delete process.env.FAKE_TTS_PROBE_FAIL
+  process.env.FAKE_TTS_REPORTED_VERSION = 'different'
+  await assert.rejects(synthesize({ ...options, retries: 0 }), /helper version differs from probed version/)
 })

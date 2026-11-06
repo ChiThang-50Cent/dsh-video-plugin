@@ -23,7 +23,7 @@ args = parser.parse_args()
 
 import torch
 import soundfile as sf
-from importlib.metadata import version
+from importlib.metadata import PackageNotFoundError, version
 from omnivoice.models.omnivoice import OmniVoice
 
 if args.device.startswith('cuda') and not torch.cuda.is_available():
@@ -33,7 +33,11 @@ actual_device = str(model.device)
 if args.device.startswith('cuda') and not actual_device.startswith('cuda'):
     raise RuntimeError(f'CUDA requested but model is on {actual_device}; refusing CPU fallback')
 prompt = model.create_voice_clone_prompt(ref_audio=args.voice_reference, ref_text=args.ref_text)
-send({'type': 'ready', 'device': actual_device, 'version': version('omnivoice')})
+try:
+    package_version = version('omnivoice')
+except PackageNotFoundError:
+    package_version = 'unknown'
+send({'type': 'ready', 'device': actual_device, 'version': package_version})
 for line in sys.stdin:
     request = json.loads(line)
     try:

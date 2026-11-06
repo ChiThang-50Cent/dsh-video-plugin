@@ -171,3 +171,63 @@ test('extract-style-refs samples videos and images into frames, a contact sheet 
   assert.ok(near(result.palette[0].hex, [255, 0, 0]), JSON.stringify(result.palette))
   assert.ok(result.palette.some((color) => near(color.hex, [0, 0, 255])), JSON.stringify(result.palette))
 })
+
+test('font symlinks cannot escape a style package', (t) => {
+  const { data } = workspace(t)
+  const dir = look(data, 'linked', {}, { fonts: [{ family: 'Brand', file: 'fonts/Brand.ttf' }] })
+  fs.mkdirSync(path.join(dir, 'fonts'))
+  const outside = path.join(data, 'outside.ttf')
+  fs.writeFileSync(outside, 'font')
+  fs.symlinkSync(outside, path.join(dir, 'fonts', 'Brand.ttf'))
+  assert.throws(() => resolveVisualStyle({ id: 'linked', dataRoot: data }), /fonts\[0\]\.file escapes the style package/)
+})
+
+test('a style requires at least one typography role', (t) => {
+  const { data } = workspace(t)
+  look(data, 'empty', {}, { typography: {} })
+  assert.throws(() => resolveVisualStyle({ id: 'empty', dataRoot: data }), /typography must define at least one role/)
+})
+
+test('reference extraction rejects traversal and escaping symlinks', async (t) => {
+  const { data } = workspace(t)
+  const narration = path.join(data, 'library', 'styles', 'x')
+  fs.mkdirSync(narration, { recursive: true })
+  fs.writeFileSync(path.join(narration, 'style.json'), '{}')
+  await assert.rejects(extractStyleRefs('../styles/x', ['unused'], { dataRoot: data, rights: 'own' }), /lowercase slug/)
+  assert.equal(fs.existsSync(path.join(narration, 'refs')), false)
+  const dir = look(data, 'target')
+  fs.symlinkSync(narration, path.join(dir, 'refs'))
+  await assert.rejects(extractStyleRefs('target', ['unused'], { dataRoot: data, rights: 'own' }), /escapes/)
+  assert.equal(fs.existsSync(path.join(narration, 'refs.json')), false)
+  const library = path.dirname(dir)
+  fs.symlinkSync(narration, path.join(library, 'linked'))
+  await assert.rejects(extractStyleRefs('linked', ['unused'], { dataRoot: data, rights: 'own' }), /escapes/)
+})
+
+test('reference frames distinguish identical basenames and contact', async (t) => {
+  if (!mediaAvailable()) return t.skip('ffmpeg unavailable')
+  const { data } = workspace(t)
+  look(data, 'target')
+  const files = ['a/still.png', 'b/still.png', 'contact.png'].map((name) => path.join(data, name))
+  for (const file of files) {
+    fs.mkdirSync(path.dirname(file), { recursive: true })
+    assert.equal(spawnSync('ffmpeg', ['-v', 'error', '-f', 'lavfi', '-i', 'color=c=red:s=32x32', '-frames:v', '1', file]).status, 0)
+  }
+  const result = await extractStyleRefs('target', files, { dataRoot: data, rights: 'own' })
+  const index = JSON.parse(fs.readFileSync(path.join(result.refsDir, 'refs.json'), 'utf8'))
+  const frames = index.sources.map((source) => source.frames[0].file)
+  assert.deepEqual(index.sources.map((source) => source.input), files)
+  assert.equal(new Set(frames).size, files.length)
+  assert.ok(!frames.includes('contact.png'))
+  for (const frame of frames) assert.ok(fs.existsSync(path.join(result.refsDir, frame)))
+})
+
+test('cloning copies declared fonts outside the fonts directory', (t) => {
+  const { data } = workspace(t)
+  const dir = look(data, 'base', {}, { fonts: [{ family: 'Brand', file: 'assets/Brand.ttf' }] })
+  fs.mkdirSync(path.join(dir, 'assets'))
+  fs.writeFileSync(path.join(dir, 'assets', 'Brand.ttf'), 'font')
+  newVisualStyle('copy', { from: 'base', dataRoot: data })
+  const resolved = resolveVisualStyle({ id: 'copy', dataRoot: data })
+  assert.equal(fs.readFileSync(resolved.fonts[0].path, 'utf8'), 'font')
+})

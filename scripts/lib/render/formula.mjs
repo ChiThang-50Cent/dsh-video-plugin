@@ -24,6 +24,7 @@ function compile(node) {
     fontSize: parseFloat(attr('font-size')) || 1000,
     x: Number(attr('x') || 0), y: Number(attr('y') || 0),
     width: Number(attr('width') || 0), height: Number(attr('height') || 0),
+    fill: attr('fill'), stroke: attr('stroke'), strokeWidth: attr('stroke-width'),
     children: tag === 'text' ? [] : adaptor.childNodes(node)
       .filter((child) => adaptor.kind(child) !== '#text').map(compile),
   };
@@ -42,8 +43,16 @@ function getFormula(tex) {
   return cache.get(tex);
 }
 
-function drawNode(ctx, node, bodyFont) {
+function drawNode(ctx, node, bodyFont, inherited = { fill: 'currentColor', stroke: 'none', strokeWidth: 1 }) {
   ctx.save();
+  const paint = {
+    fill: node.fill ?? inherited.fill,
+    stroke: node.stroke ?? inherited.stroke,
+    strokeWidth: node.strokeWidth == null ? inherited.strokeWidth : Number(node.strokeWidth),
+  };
+  if (paint.fill !== 'none' && paint.fill !== 'currentColor') ctx.fillStyle = paint.fill;
+  if (paint.stroke !== 'none' && paint.stroke !== 'currentColor') ctx.strokeStyle = paint.stroke;
+  if (paint.strokeWidth > 0) ctx.lineWidth = paint.strokeWidth;
   for (const match of node.transform.matchAll(/(translate|scale|matrix|rotate)\s*\(([^)]*)\)/g)) {
     const p = match[2].trim().split(/[\s,]+/).map(Number);
     if (match[1] === 'translate') ctx.translate(p[0], p[1] ?? 0);
@@ -56,15 +65,21 @@ function drawNode(ctx, node, bodyFont) {
       if (p.length > 2) ctx.translate(-p[1], -p[2]);
     }
   }
-  if (node.path) ctx.fill(node.path);
-  if (node.tag === 'rect') ctx.fillRect(node.x, node.y, node.width, node.height);
+  if (node.path) {
+    if (paint.fill !== 'none') ctx.fill(node.path);
+    if (paint.stroke !== 'none' && paint.strokeWidth > 0) ctx.stroke(node.path);
+  }
+  if (node.tag === 'rect') {
+    if (paint.fill !== 'none') ctx.fillRect(node.x, node.y, node.width, node.height);
+    if (paint.stroke !== 'none' && paint.strokeWidth > 0) ctx.strokeRect(node.x, node.y, node.width, node.height);
+  }
   if (node.text) {
     ctx.font = `${node.fontSize}px ${bodyFont}`;
     ctx.textAlign = 'left';
     ctx.textBaseline = 'alphabetic';
-    ctx.fillText(node.text, node.x, node.y);
+    if (paint.fill !== 'none') ctx.fillText(node.text, node.x, node.y);
   }
-  for (const child of node.children) drawNode(ctx, child, bodyFont);
+  for (const child of node.children) drawNode(ctx, child, bodyFont, paint);
   ctx.restore();
 }
 
@@ -75,6 +90,7 @@ export function drawFormula(ctx, tex, x, y, options = {}) {
   const scale = size / 1000;
   ctx.save();
   ctx.fillStyle = color;
+  ctx.strokeStyle = color;
   ctx.translate(x - viewBox[0] * scale, y - viewBox[1] * scale);
   ctx.scale(scale, scale);
   drawNode(ctx, root, bodyFont);

@@ -127,3 +127,22 @@ test('canvas and formula render deterministic pixels with a meaningful bounding 
   }
   assert.deepEqual(render(), render())
 })
+
+test('boxed formula leaves its interior transparent and draws its border', { skip: !(hasSkia && hasMathJax) && 'skia-canvas or MathJax is not installed' }, async () => {
+  const { drawFormula } = await import('../scripts/lib/render/formula.mjs')
+  const { canvas, ctx } = createEngine(400, 250, 'cpu')
+  try {
+    ctx.fillStyle = '#fff'
+    ctx.fillRect(0, 0, 400, 250)
+    const box = drawFormula(ctx, '\\boxed{x}', 20, 20, { size: 120, color: '#000' })
+    const data = pixels(ctx, 400, 250)
+    const x = Math.floor(box.x + box.width * 0.15)
+    const center = Math.floor(box.y + box.height / 2)
+    assert.equal(data[(center * 400 + x) * 4], 255, 'box interior should remain background')
+    let border = false
+    for (let y = Math.floor(box.y); y < center; y++) {
+      if (data[(y * 400 + x) * 4] < 100) border = true
+    }
+    assert.ok(border, 'box border should be ink')
+  } finally { canvas.dispose() }
+})

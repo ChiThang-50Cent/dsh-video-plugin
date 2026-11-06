@@ -26,7 +26,7 @@ Visual looks are separate packages `library/visual-styles/<id>/` (`style.json` t
 
 - reuse an existing look: set `visualStyle` on the project (whole series) or on one episode's `production.json` (one-off);
 - derive a new one: `node <studio>/scripts/new-visual-style.mjs <id> --from <existing>`, edit its tokens, optionally add OFL fonts under `fonts/` declared in `style.json.fonts`;
-- start from a reference the user gives (video/screenshots, already on disk): `node <studio>/scripts/extract-style-refs.mjs <id> <files...> --rights "<owner and permitted use>"`, read `refs/contact.png` and the palette in `refs/refs.json`, then set tokens. Take mood, palette and typography direction; never clone a third-party design;
+- start from a reference the user gives (video/screenshots, already on disk): first create the package (`new-visual-style.mjs <id> --from <closest-existing>`), then `node <studio>/scripts/extract-style-refs.mjs <id> <files...> --rights "<owner and permitted use>"`, read `refs/contact.png` and the palette in `refs/refs.json`, then set tokens. Take mood, palette and typography direction; never clone a third-party design;
 - then re-render (`render-episode` re-renders exactly the scenes whose style hash changed) and re-run scene QA so each `qa/scene/<id>.json` records the new `styleSha256`. A released master stays untouched; render the restyled cut to a new output path.
 
 ## Modes and releases

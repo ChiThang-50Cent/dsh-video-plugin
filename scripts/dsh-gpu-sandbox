@@ -9,7 +9,7 @@ while [ "$count" -gt 0 ]; do
     shift
     if [ "$arg" = -- ] && [ "$found" = false ]; then
         found=true
-        for node in "$root"/nvidia[0-9]* "$root"/nvidiactl "$root"/nvidia-uvm "$root"/nvidia-uvm-tools "$root"/nvidia-modeset "$root"/nvidia-caps "$root"/dri; do
+        for node in "$root"/nvidia[0-9]* "$root"/nvidiactl "$root"/nvidia-uvm "$root"/nvidia-uvm-tools "$root"/nvidia-modeset "$root"/nvidia-caps "$root"/dri "$root"/dxg; do
             [ -e "$node" ] || continue
             set -- "$@" --dev-bind-try "$node" "$node"
         done

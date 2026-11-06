@@ -164,7 +164,7 @@ function baselinePath(root, id) {
 }
 
 function inventory(root, baseline) {
-  const files = {}
+  const files = Object.create(null)
   function visit(dir) {
     for (const name of fs.readdirSync(dir).sort()) {
       const file = path.join(dir, name)
@@ -203,8 +203,9 @@ function readBaseline(file, expectedHash) {
 export function validateWorkerResult(episodeDir, result, options = {}) {
   const errors = []
   const warnings = []
-  const root = path.resolve(episodeDir)
-  if (!fs.existsSync(root) || !fs.statSync(root).isDirectory()) throw new Error(`episode directory not found: ${root}`)
+  const resolved = path.resolve(episodeDir)
+  if (!fs.existsSync(resolved) || !fs.statSync(resolved).isDirectory()) throw new Error(`episode directory not found: ${resolved}`)
+  const root = fs.realpathSync(resolved)
   if (result === null || typeof result !== 'object' || Array.isArray(result)) return { ok: false, errors: ['result must be a JSON object'], warnings }
   const status = String(result.status ?? '').toUpperCase()
   if (status !== 'PASS' && options.allowFail !== true) errors.push(`worker status is "${result.status ?? 'missing'}"; integration requires PASS`)
@@ -278,7 +279,7 @@ export function validateWorkerResult(episodeDir, result, options = {}) {
     try {
       const realRoot = fs.realpathSync(root)
       const expected = baselinePath(realRoot, sceneId)
-      if (path.resolve(options.baseline) !== expected || fs.lstatSync(expected).isSymbolicLink() || realpathInside(realRoot, expected) !== expected) throw new Error('baseline must be the protected task baseline in episode/qa/worker-baselines')
+      if (path.join(fs.realpathSync(path.dirname(path.resolve(options.baseline))), path.basename(options.baseline)) !== expected || fs.lstatSync(expected).isSymbolicLink() || realpathInside(realRoot, expected) !== expected) throw new Error('baseline must be the protected task baseline in episode/qa/worker-baselines')
       const baseline = readBaseline(expected, options.baselineSha256)
       if (baseline.version !== 1 || baseline.task !== sceneId || baseline.episode !== realRoot || !baseline.files || typeof baseline.files !== 'object' || Array.isArray(baseline.files)) throw new Error('invalid baseline')
       const current = inventory(realRoot, expected)
@@ -316,8 +317,10 @@ export function validateWorkerWave(episodeDir, results, options = {}) {
   if (!Array.isArray(results) || results.length === 0) return { ok: false, errors: ['wave requires at least one result'], warnings }
   const owners = new Map()
   const ids = new Set()
-  for (const result of results) {
-    const check = validateWorkerResult(root, result, { allow: options.allow, allowFail: options.allowFail, skipBaseline: true })
+  for (const [index, result] of results.entries()) {
+    const resultFile = options.resultFiles?.[index]
+    const work = resultFile === undefined ? undefined : path.relative(root, path.dirname(fs.realpathSync(resultFile)))
+    const check = validateWorkerResult(root, result, { work, allow: options.allow, allowFail: options.allowFail, skipBaseline: true })
     errors.push(...check.errors)
     warnings.push(...check.warnings.filter((warning) => !warning.startsWith('baseline comparison skipped')))
     if (ids.has(result?.sceneId)) errors.push(`duplicate wave sceneId: ${result.sceneId}`)
@@ -327,14 +330,14 @@ export function validateWorkerWave(episodeDir, results, options = {}) {
       const relative = path.relative(root, path.resolve(root, file)).split(path.sep).join('/')
       const prior = owners.get(relative)
       if (prior !== undefined) errors.push(`filesystem change reported by multiple workers: ${relative}`)
-      else owners.set(relative, result.sceneId)
+      else owners.set(relative, check.data?.workDir)
     }
   }
   try {
     if (!options.baseline) throw new Error('wave requires --baseline')
     const task = path.basename(options.baseline, '.json')
     const expected = baselinePath(root, task)
-    if (path.resolve(options.baseline) !== expected || fs.lstatSync(expected).isSymbolicLink() || realpathInside(root, expected) !== expected) throw new Error('baseline must be in episode/qa/worker-baselines')
+    if (path.join(fs.realpathSync(path.dirname(path.resolve(options.baseline))), path.basename(options.baseline)) !== expected || fs.lstatSync(expected).isSymbolicLink() || realpathInside(root, expected) !== expected) throw new Error('baseline must be in episode/qa/worker-baselines')
     const baseline = readBaseline(expected, options.baselineSha256)
     if (baseline.version !== 1 || baseline.task !== task || baseline.episode !== root || !baseline.files || typeof baseline.files !== 'object' || Array.isArray(baseline.files)) throw new Error('invalid baseline')
     const current = inventory(root, expected)
@@ -345,7 +348,7 @@ export function validateWorkerWave(episodeDir, results, options = {}) {
         errors.push(`unreported filesystem change: ${file}`)
         continue
       }
-      const work = path.join(root, 'work', owner)
+      const work = path.resolve(root, owner)
       const absolute = path.resolve(root, file)
       if (!absolute.startsWith(`${work}${path.sep}`) || (current[file] && realpathInside(work, absolute) === undefined)) errors.push(`filesystem change outside reporting worker's directory: ${file}`)
       if (options.allow?.length && !matchesAny(file, options.allow)) errors.push(`filesystem change not covered by allowlist: ${file}`)
@@ -403,7 +406,7 @@ function main() {
       result = snapshotWorker(args.positional[0], args.task)
     } else if (args.command === 'wave') {
       if (args.positional.length !== 1 || args.results.length === 0 || !args.baseline) throw new Error('wave needs <episode-dir> --baseline <file> --result <file>...')
-      result = validateWorkerWave(args.positional[0], args.results.map(readJson), { baseline: args.baseline, baselineSha256: args.baselineSha256, allow: args.allow, allowFail: args.allowFail })
+      result = validateWorkerWave(args.positional[0], args.results.map(readJson), { resultFiles: args.results, baseline: args.baseline, baselineSha256: args.baselineSha256, allow: args.allow, allowFail: args.allowFail })
     } else if (args.command === 'result') {
       if (args.positional.length !== 2) throw new Error('result needs <episode-dir> <result.json>')
       result = validateWorkerResult(args.positional[0], readJson(args.positional[1]), { work: args.work, allow: args.allow, allowFail: args.allowFail, baseline: args.baseline, baselineSha256: args.baselineSha256, skipBaseline: args.skipBaseline })

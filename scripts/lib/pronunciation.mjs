@@ -115,15 +115,20 @@ export function numberToVietnamese(input) {
 function parseUnderThousand(words) {
   let total = 0
   let current = 0
+  let hasDigit = false
   for (const word of words) {
-    if (word in DIGITS) current = DIGITS[word]
-    else if (word === 'mươi' || word === 'mười') {
+    if (word in DIGITS) {
+      current = DIGITS[word]
+      hasDigit = true
+    } else if (word === 'mươi' || word === 'mười') {
       if (current === 0) current = 1
       total += current * 10
       current = 0
+      hasDigit = false
     } else if (word === 'trăm') {
-      total += (current === 0 ? 1 : current) * 100
+      total += (hasDigit ? current : 1) * 100
       current = 0
+      hasDigit = false
     } else return Number.NaN
   }
   return total + current
@@ -246,7 +251,9 @@ export function semanticFingerprint(text) {
     }
     add(match.index, match.index + raw.length, `NUM:${Number(integer.replace(/\./g, '') + (decimals.length ? `.${decimals[0]}` : ''))}`, 2)
   }
-  const wordMatches = [...normalized.matchAll(NUMBER_WORD_PATTERN)]
+  const numberText = normalized.replace(OPERATOR_PATTERN, (term) => '#'.repeat(term.length))
+  const wordMatches = [...numberText.matchAll(NUMBER_WORD_PATTERN)]
+  const isDigitWord = (word) => word in DIGITS && word !== 'lẻ' && word !== 'linh'
   let run = []
   const flush = () => {
     if (!run.length) return
@@ -255,11 +262,12 @@ export function semanticFingerprint(text) {
     run = []
   }
   for (const match of wordMatches) {
-    if (run.length && !/^\s*$/.test(normalized.slice(run.at(-1).index + run.at(-1)[0].length, match.index))) flush()
+    if (run.length && (!/^\s*$/.test(numberText.slice(run.at(-1).index + run.at(-1)[0].length, match.index))
+      || (isDigitWord(run.at(-1)[0]) && isDigitWord(match[0])))) flush()
     run.push(match)
   }
   flush()
-  for (const match of normalized.matchAll(/(?<!\p{L})(?:không|một|hai|ba|bốn|tư|năm|sáu|bảy|tám|chín|mười|mươi|trăm|nghìn|ngàn|triệu|tỷ|tỉ|lẻ|linh|mốt|lăm)(?:\s+(?:không|một|hai|ba|bốn|tư|năm|sáu|bảy|tám|chín|mười|mươi|trăm|nghìn|ngàn|triệu|tỷ|tỉ|lẻ|linh|mốt|lăm))*\s+phẩy\s+(?:không|một|hai|ba|bốn|tư|năm|lăm|sáu|bảy|tám|chín)(?:\s+(?:không|một|hai|ba|bốn|tư|năm|lăm|sáu|bảy|tám|chín))*/gu)) {
+  for (const match of numberText.matchAll(/(?<!\p{L})(?:không|một|hai|ba|bốn|tư|năm|sáu|bảy|tám|chín|mười|mươi|trăm|nghìn|ngàn|triệu|tỷ|tỉ|lẻ|linh|mốt|lăm)(?:\s+(?:không|một|hai|ba|bốn|tư|năm|sáu|bảy|tám|chín|mười|mươi|trăm|nghìn|ngàn|triệu|tỷ|tỉ|lẻ|linh|mốt|lăm))*\s+phẩy\s+(?:không|một|hai|ba|bốn|tư|năm|lăm|sáu|bảy|tám|chín)(?:\s+(?:không|một|hai|ba|bốn|tư|năm|lăm|sáu|bảy|tám|chín))*/gu)) {
     const [integer, decimal] = match[0].split(/\s+phẩy\s+/u)
     const digits = decimal.split(/\s+/u).map((word) => DIGITS[word]).join('')
     add(match.index, match.index + match[0].length, `NUM:${Number(`${parseVietnameseNumber(integer)}.${digits}`)}`, 4)
@@ -275,7 +283,7 @@ export function semanticFingerprint(text) {
     add(match.index, match.index + match[0].length, `OP:${match[0] === 'âm' ? 'NEG' : 'POS'}`, 3)
   }
   for (const [term, unit] of MEASUREMENT_UNITS) {
-    const pattern = new RegExp(`(?<![\\p{L}])${term}(?![\\p{L}])`, 'gu')
+    const pattern = new RegExp(`(?<![\\p{L}])${term}(?![\\p{L}(])`, 'gu')
     for (const match of normalized.matchAll(pattern)) {
       if (matches.some((item) => item.token.startsWith('NUM:') && item.end <= match.index && /^\s*$/.test(normalized.slice(item.end, match.index)))) {
         add(match.index, match.index + term.length, `UNIT:${unit}`, 2)

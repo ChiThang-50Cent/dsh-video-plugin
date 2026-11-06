@@ -4,7 +4,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { createHash } from 'node:crypto'
 import { parseNarration } from '../scripts/lib/narration-model.mjs'
-import { compareSemantics } from '../scripts/lib/pronunciation.mjs'
+import { compareSemantics, semanticFingerprint } from '../scripts/lib/pronunciation.mjs'
 import { validateNarration } from '../scripts/validate-narration.mjs'
 import {
   buildClaims,
@@ -24,12 +24,12 @@ Vì vậy, trước khi tổng hợp giọng nói, hãy kiểm tra từng chỗ 
 Kết luận của phép tính này là 11, và kết luận đó phải được giữ nguyên trong âm thanh.
 `
 
-function episode(t, reviewOverrides = {}) {
-  const parsed = parseNarration(NARRATION)
+function episode(t, reviewOverrides = {}, narration = NARRATION) {
+  const parsed = parseNarration(narration)
   const claims = buildClaims(parsed, [{ id: 'c01', claim: '16 trừ 5 bằng 11', needle: '16 trừ 5 bằng 11', derivation: '16 - 5 = 11', risk: 'low' }])
   const throughline = buildThroughline(parsed, { centralQuestion: 'Phép trừ 16 trừ 5 bằng bao nhiêu?', claimIds: ['c01'] })
   const review = buildReview(parsed, '0'.repeat(64), { claimRefs: ['c01'], ...reviewOverrides })
-  return makeEpisode(t, { narration: NARRATION, claims, throughline, review, parsedOverride: parsed })
+  return makeEpisode(t, { narration, claims, throughline, review, parsedOverride: parsed })
 }
 
 function segmentsFrom(parsed, hash) {
@@ -200,6 +200,32 @@ test('symbol pronunciation can preserve the operator while changing its spoken n
   assert.equal(compareSemantics('%', 'phần trăm').ok, true)
   assert.equal(compareSemantics('16%', 'mười sáu phần trăm').ok, true)
   assert.equal(compareSemantics('16%', 'mười sáu').ok, false)
+})
+
+test('percent operator spans split number-word runs without hiding quantities', () => {
+  assert.equal(compareSemantics('một phần trăm nghìn', 'một phần trăm').ok, false)
+  assert.equal(compareSemantics('5% năm 2025', 'năm phần trăm năm hai nghìn không trăm hai mươi lăm').ok, true)
+})
+
+test('adjacent digit words form separate numbers without splitting linked numbers', () => {
+  assert.deepEqual(semanticFingerprint('ba bốn').tokens, ['NUM:3', 'NUM:4'])
+  assert.deepEqual(semanticFingerprint('một trăm lẻ năm').tokens, ['NUM:105'])
+  assert.deepEqual(semanticFingerprint('hai mươi lăm').tokens, ['NUM:25'])
+})
+
+test('a function name after a number can be pronounced without becoming a unit', (t) => {
+  const narration = NARRATION.replace('Đây là một phép trừ', 'Hàm 2 g(x) xuất hiện ở đây. Đây là một phép trừ')
+  const created = episode(t, {}, narration)
+  const manifest = segmentsFrom(parseNarration(narration), currentHash(created.dir))
+  const segment = manifest.segments[0]
+  segment.spokenText = segment.text.replace('g(x)', 'gờ(x)')
+  segment.pronunciation = {
+    version: 1,
+    overrides: [{ from: 'g(x)', to: 'gờ(x)', kind: 'letter', provenance: 'test', justification: 'Read the function name as a letter.', risk: 'low' }],
+  }
+  const result = run(created, manifest)
+  assert.equal(result.ok, true, result.errors.join('\n'))
+  assert.deepEqual(semanticFingerprint('2 g').tokens, ['NUM:2', 'UNIT:g'])
 })
 
 test('semantic fingerprints preserve ordered quantities, operators, signs and units', async () => {

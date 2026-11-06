@@ -5,6 +5,7 @@ import { createHash } from 'node:crypto'
 import { spawn } from 'node:child_process'
 import { createInterface } from 'node:readline'
 import { fileURLToPath, pathToFileURL } from 'node:url'
+import { findCommand, runBounded } from './lib/bounded.mjs'
 
 const helper = fileURLToPath(new URL('./lib/tts/omnivoice_batch.py', import.meta.url))
 const hash = (value) => createHash('sha256').update(value).digest('hex')
@@ -71,7 +72,7 @@ class Worker {
 }
 
 export async function synthesize(options) {
-  const episode = path.resolve(options.episode)
+  const episode = fs.realpathSync(path.resolve(options.episode))
   const segments = readJson(path.resolve(episode, options.segments))
   const narrationSha256 = hash(fs.readFileSync(path.join(episode, 'narration.md')))
   if (segments.narrationSha256 !== narrationSha256) throw new Error('segments are stale relative to narration.md')
@@ -81,37 +82,64 @@ export async function synthesize(options) {
   const previous = new Map((prior.chunks ?? []).map((chunk) => [chunk.segmentId ?? chunk.id, chunk]))
   const refHash = hash(fs.readFileSync(options.voiceReference))
   const deadline = Date.now() + options.overallTimeoutMs
+  const helperSha256 = hash(fs.readFileSync(options.helper ?? helper))
+  const pythonPath = options.python.includes(path.sep) ? path.resolve(options.python) : findCommand(options.python) ?? options.python
+  const outputs = segments.segments.map((segment) => {
+    if (!segment.id || typeof segment.text !== 'string' || typeof segment.audio !== 'string') throw new Error('invalid segment')
+    const output = path.resolve(episode, segment.audio)
+    if (!output.startsWith(`${episode}${path.sep}`)) throw new Error(`segment path escapes episode: ${segment.audio}`)
+    let realParent = episode
+    for (const component of path.relative(episode, path.dirname(output)).split(path.sep).filter(Boolean)) {
+      const directory = path.join(realParent, component)
+      if (!fs.existsSync(directory)) fs.mkdirSync(directory)
+      realParent = fs.realpathSync(directory)
+      if (realParent !== episode && !realParent.startsWith(`${episode}${path.sep}`)) throw new Error(`segment path escapes episode: ${segment.audio}`)
+    }
+    try {
+      if (fs.lstatSync(output).isSymbolicLink()) throw new Error(`segment path is a symlink: ${segment.audio}`)
+    } catch (error) { if (error.code !== 'ENOENT') throw error }
+    return output
+  })
   const chunks = []
-  let worker, ready, synthesized = 0, reused = 0
-  const save = () => {
-    const { stale: _stale, staleReason: _staleReason, ...rest } = prior
-    const record = { ...rest, schemaVersion: 1, narrationSha256, generatedAt: new Date().toISOString(), engine: { ...prior.engine, provider: 'omnivoice', version: ready?.version ?? prior.engine?.version ?? 'unknown', command: options.python, model: options.model, device: ready?.device ?? prior.engine?.device ?? options.device, voiceReference: options.voiceReference, voiceReferenceSha256: refHash, referenceText: options.refText, settings: { language: options.language ?? null, device: options.device } }, chunks }
+  let worker, ready, probedVersion, synthesized = 0, reused = 0
+  const startWorker = async () => {
+    worker = new Worker(options, deadline)
+    const response = await worker.next()
+    if (response.type !== 'ready' || (options.device.startsWith('cuda') && !String(response.device).startsWith('cuda'))) throw new Error('helper did not confirm CUDA; refusing CPU fallback')
+    if (response.version !== probedVersion) throw new Error('helper version differs from probed version')
+    ready = response
+  }
+  const save = (complete = false) => {
+    const { stale: _stale, staleReason: _staleReason, generatedAt: _generatedAt, ...rest } = prior
+    const processed = new Map(chunks.map((chunk) => [chunk.segmentId ?? chunk.id, chunk]))
+    const savedChunks = complete ? chunks : segments.segments.map((segment) => processed.get(segment.id) ?? previous.get(segment.id)).filter(Boolean)
+    const record = { ...rest, schemaVersion: 1, narrationSha256, ...(complete ? { generatedAt: new Date().toISOString() } : { stale: true, staleReason: 'synthesis in progress' }), engine: { ...prior.engine, provider: 'omnivoice', version: probedVersion ?? prior.engine?.version ?? 'unknown', command: options.python, model: options.model, device: ready?.device ?? prior.engine?.device ?? options.device, voiceReference: options.voiceReference, voiceReferenceSha256: refHash, referenceText: options.refText, settings: { language: options.language ?? null, device: options.device } }, chunks: savedChunks }
     const temp = `${manifestPath}.tmp-${process.pid}`
     fs.writeFileSync(temp, `${JSON.stringify(record, null, 2)}\n`)
     fs.renameSync(temp, manifestPath)
   }
   try {
-    for (const segment of segments.segments) {
+    save()
+    // Probe package metadata without loading the model, allowing cached runs to avoid GPU initialization.
+    const remaining = deadline - Date.now()
+    if (remaining <= 0) throw new Error('overall timeout exceeded')
+    const probe = runBounded(options.python, ['-c', "import importlib.metadata as m\ntry: print(m.version('omnivoice'))\nexcept m.PackageNotFoundError: print('unknown')"], { timeoutMs: Math.min(30000, remaining), retries: 0 })
+    if (!probe.ok || !probe.stdout.trim()) throw new Error(`failed to probe omnivoice version: ${probe.stderr || probe.errorCode || (probe.timedOut ? 'timeout' : `exit ${probe.status}`)}`)
+    probedVersion = probe.stdout.trim()
+    for (const [index, segment] of segments.segments.entries()) {
       if (Date.now() >= deadline) throw new Error('overall timeout exceeded')
-      if (!segment.id || typeof segment.text !== 'string' || typeof segment.audio !== 'string') throw new Error('invalid segment')
-      const output = path.resolve(episode, segment.audio)
-      if (!output.startsWith(`${episode}${path.sep}`)) throw new Error(`segment path escapes episode: ${segment.audio}`)
+      const output = outputs[index]
       const text = segment.spokenText ?? segment.text
-      const fingerprint = hash(JSON.stringify({ text, model: options.model, voiceReference: refHash, refText: options.refText, language: options.language ?? null, device: options.device }))
+      const fingerprint = hash(JSON.stringify({ text, model: options.model, python: pythonPath, helperSha256, version: probedVersion, voiceReference: refHash, refText: options.refText, language: options.language ?? null, device: options.device }))
       const old = previous.get(segment.id)
       if (old?.fingerprint === fingerprint && old.path === segment.audio && fs.existsSync(output) && old.sha256 === hash(fs.readFileSync(output))) {
         chunks.push(old); reused++; continue
       }
-      fs.mkdirSync(path.dirname(output), { recursive: true })
       const temp = `${output}.tmp-${process.pid}`
       let failure
       for (let attempt = 1; attempt <= options.retries + 1; attempt++) {
         try {
-          if (!worker) {
-            worker = new Worker(options, deadline)
-            ready = await worker.next()
-            if (ready.type !== 'ready' || (options.device.startsWith('cuda') && !String(ready.device).startsWith('cuda'))) throw new Error('helper did not confirm CUDA; refusing CPU fallback')
-          }
+          if (!worker) await startWorker()
           worker.child.stdin.write(`${JSON.stringify({ id: segment.id, text, language: options.language, output: temp })}\n`)
           const result = await worker.next()
           if (result.type !== 'result' || result.id !== segment.id || !result.ok) throw new Error(result.error ?? 'invalid helper result')
@@ -128,7 +156,7 @@ export async function synthesize(options) {
       }
       if (failure) throw new Error(`synthesis failed for ${segment.id}: ${failure.message}`)
     }
-    save()
+    save(true)
     return { synthesized, reused, device: ready?.device ?? prior.engine?.device ?? options.device, chunks: chunks.length }
   } finally { worker?.stop() }
 }

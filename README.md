@@ -191,10 +191,13 @@ node scripts/validate-episode.mjs <episode> --release    # delivery
 ```bash
 node scripts/validate-workers.mjs plan plan.json --max-concurrency 2 --max-depth 1
 node scripts/validate-workers.mjs result <episode> scene-result.json \
-  --work work/s03 --allow 'work/s03/**'
+  --work work/task-s03 --allow 'work/task-s03/**'
+node scripts/validate-workers.mjs wave <episode> --baseline <episode>/qa/worker-baselines/<wave-id>.json \
+  --baseline-sha256 <sha256> --result work/task-s03/scene-result.json --result work/task-s04/scene-result.json \
+  --allow 'work/task-s03/**' --allow 'work/task-s04/**'
 ```
 
-The result check rejects changed files outside the work directory/allowlist, protected artifacts and symlink escapes. This is post-hoc review, **not** a filesystem sandbox; prompt text is not security. Use the DSH child session sandbox where available.
+The result check rejects changed files outside the work directory/allowlist, protected artifacts and symlink escapes. In a wave, each worker's directory is the directory of its result file (`work/<task-id>/scene-result.json`), so task ids need not equal scene ids. This is post-hoc review, **not** a filesystem sandbox; prompt text is not security. Use the DSH child session sandbox where available.
 
 ## Metrics from DSH logs
 
@@ -207,7 +210,7 @@ The collector reads persisted DSH session JSONL (plain or zstd), follows `parent
 
 ## Visual styles
 
-The look of rendered scenes (colours, typography, fonts, layout, motion) lives in swappable packages `<dataRoot>/library/visual-styles/<id>/`, chosen by `production.json.visualStyle` > `project.json.visualStyle` > built-in `default`. Add one with `node scripts/new-visual-style.mjs <id> --from <existing>` or seed it from local references with `node scripts/extract-style-refs.mjs <id> <files...> --rights "<note>"`; edit its `style.json`; switch by changing `visualStyle`; delete by removing the directory once nothing references it. Any change re-renders the affected scenes and requires scene QA again. Details: [library/visual-styles/README.md](library/visual-styles/README.md).
+The look of rendered scenes (colours, typography, fonts, layout, motion) lives in swappable packages `<dataRoot>/library/visual-styles/<id>/`, chosen by `production.json.visualStyle` > `project.json.visualStyle` > built-in `default`. Add one with `node scripts/new-visual-style.mjs <id> --from <existing>`, then optionally pull local references into it with `node scripts/extract-style-refs.mjs <id> <files...> --rights "<note>"` (the package must exist first); edit its `style.json`; switch by changing `visualStyle`; delete by removing the directory once nothing references it. Any change re-renders the affected scenes and requires scene QA again. Details: [library/visual-styles/README.md](library/visual-styles/README.md).
 
 ## Narration style references
 

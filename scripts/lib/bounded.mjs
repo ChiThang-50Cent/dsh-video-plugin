@@ -16,7 +16,7 @@ const GRACE_MS = 200
 const SUPERVISOR_MARGIN_MS = 1000
 const supervisor = `
 const { spawn } = require('node:child_process')
-const spec = JSON.parse(process.argv[1])
+const spec = JSON.parse(require('node:fs').readFileSync(0, 'utf8'))
 let stdout = '', stderr = '', timedOut = false, errorCode
 const child = spawn(spec.command, spec.args, { cwd: spec.cwd, env: spec.env, detached: process.platform !== 'win32', windowsHide: true })
 const kill = (signal) => { try { process.kill(process.platform === 'win32' ? child.pid : -child.pid, signal) } catch {} }
@@ -113,10 +113,11 @@ export function runBounded(command, args = [], options = {}) {
   let last
   for (let attempt = 1; attempt <= retries + 1; attempt += 1) {
     const started = Date.now()
-    const result = spawnSync(process.execPath, ['-e', supervisor, JSON.stringify({
-      command, args, cwd: options.cwd, env: options.env, input: options.input,
-      maxBuffer: options.maxBuffer ?? 10 * 1024 * 1024, timeout: timeoutMs, grace: GRACE_MS,
-    })], {
+    const result = spawnSync(process.execPath, ['-e', supervisor], {
+      input: JSON.stringify({
+        command, args, cwd: options.cwd, env: options.env, input: options.input,
+        maxBuffer: options.maxBuffer ?? 10 * 1024 * 1024, timeout: timeoutMs, grace: GRACE_MS,
+      }),
       encoding: 'utf8', maxBuffer: (options.maxBuffer ?? 10 * 1024 * 1024) * 3, windowsHide: true,
       timeout: timeoutMs + GRACE_MS + SUPERVISOR_MARGIN_MS, killSignal: 'SIGKILL',
     })

@@ -32,14 +32,21 @@ function hashTree(hash, dir) {
 function sceneKey(scene, root, settings) {
   const hash = createHash('sha256')
   const seen = new Set()
+  let cacheable = true
   function moduleFile(file) {
-    file = fs.realpathSync(file)
+    try { file = fs.realpathSync(file) } catch { cacheable = false; return }
     if (seen.has(file)) return
     seen.add(file)
     const source = fs.readFileSync(file, 'utf8')
     hash.update(file).update(source)
-    const imports = /(?:\b(?:import|export)\s+(?:[^'"]*?\s+from\s*)?|\bimport\s*\(\s*)['"](\.{1,2}\/[^'"]+)['"]/g
-    for (const match of source.matchAll(imports)) moduleFile(path.resolve(path.dirname(file), match[1]))
+    const imports = /\b(?:import|export)\b[^'";]*?\bfrom\s*['"](\.{1,2}\/[^'"]+)['"]|\bimport\s*['"](\.{1,2}\/[^'"]+)['"]/g
+    for (const match of source.matchAll(imports)) moduleFile(path.resolve(path.dirname(file), match[1] ?? match[2]))
+    // Dynamic imports that cannot be resolved statically must always miss the cache.
+    for (const match of source.matchAll(/\bimport\s*\(\s*([^)]*)\)/g)) {
+      const literal = match[1].match(/^(['"])([^'"]+)\1\s*$/)
+      if (!literal) cacheable = false
+      else if (/^\.{1,2}\//.test(literal[2])) moduleFile(path.resolve(path.dirname(file), literal[2]))
+    }
   }
   moduleFile(scene.file)
   hashTree(hash, path.join(root, 'assets'))
@@ -47,7 +54,7 @@ function sceneKey(scene, root, settings) {
   hashTree(hash, path.join(scriptDir, 'lib', 'render'))
   hash.update(fs.readFileSync(sceneRunner))
   hash.update(JSON.stringify({ durationSec: scene.durationSec, ...settings }))
-  return hash.digest('hex')
+  return { key: hash.digest('hex'), cacheable }
 }
 
 async function renderChildren(jobs, concurrency, timeoutMs, options) {
@@ -93,6 +100,24 @@ async function renderChildren(jobs, concurrency, timeoutMs, options) {
 
 function readJson(file) {
   return JSON.parse(fs.readFileSync(file, 'utf8'))
+}
+
+function regularFile(file) {
+  try { return fs.lstatSync(file).isFile() } catch (error) {
+    if (error.code === 'ENOENT') return false
+    throw error
+  }
+}
+
+function publish(file, write) {
+  const dir = fs.mkdtempSync(path.join(path.dirname(file), '.publish-'))
+  try {
+    const staged = path.join(dir, 'file')
+    write(staged)
+    fs.renameSync(staged, file)
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true })
+  }
 }
 
 function episodeFile(root, relative, label) {
@@ -161,7 +186,7 @@ export async function renderEpisode(episodeDir, options = {}) {
   const output = path.resolve(root, options.out ?? production.finalOutput ?? timeline.finalOutput ?? 'exports/master.mp4')
   if (path.extname(output).toLowerCase() !== '.mp4') throw new Error('episode output must use the .mp4 extension')
   if (!output.startsWith(`${root}${path.sep}`)) throw new Error('output must be inside the episode')
-  if (!options.overwrite && fs.existsSync(output)) throw new Error(`output already exists; pass --overwrite to replace it: ${output}`)
+  if (!options.overwrite && fs.lstatSync(output, { throwIfNoEntry: false })) throw new Error(`output already exists; pass --overwrite to replace it: ${output}`)
   fs.mkdirSync(path.dirname(output), { recursive: true })
   const outputDir = fs.realpathSync(path.dirname(output))
   if (!outputDir.startsWith(`${root}${path.sep}`) && outputDir !== root) throw new Error('output directory escapes the episode')
@@ -179,12 +204,12 @@ export async function renderEpisode(episodeDir, options = {}) {
     if (!fs.realpathSync(cacheDir).startsWith(`${root}${path.sep}`)) throw new Error('render cache escapes the episode')
     const jobs = scenes.map((scene, index) => {
       const cacheStarted = performance.now()
-      const key = sceneKey(scene, root, { engine: options.engine ?? 'cpu', encoder, bodyFont: bodyFont ?? null, styleSha256: style.sha256 })
+      const { key, cacheable } = sceneKey(scene, root, { engine: options.engine ?? 'cpu', encoder, bodyFont: bodyFont ?? null, styleSha256: style.sha256 })
       const cached = path.join(cacheDir, `${key}.mp4`)
       const out = path.join(temp, `scene-${index}.mp4`)
       const reportFile = `${cached}.json`
-      const job = { scene, key, cached, out, reportFile, cache: 'miss' }
-      if (!options.noCache && fs.existsSync(cached) && fs.existsSync(reportFile)) {
+      const job = { scene, key, cacheable, cached, out, reportFile, cache: 'miss' }
+      if (cacheable && !options.noCache && regularFile(cached) && regularFile(reportFile)) {
         job.report = readJson(reportFile)
         fs.copyFileSync(cached, out)
         job.cache = 'hit'
@@ -201,9 +226,9 @@ export async function renderEpisode(episodeDir, options = {}) {
       if (meta && (current.width !== meta.width || current.height !== meta.height || current.fps !== meta.fps)) throw new Error(`scene ${scene.id} has incompatible dimensions or frame rate`)
       meta ??= current
       if (Math.abs(scene.startSec * meta.fps - Math.round(scene.startSec * meta.fps)) > 1e-6 || Math.abs(scene.durationSec * meta.fps - Math.round(scene.durationSec * meta.fps)) > 1e-6) throw new Error(`scene ${scene.id} timing must align to frames`)
-      if (job.cache === 'miss') {
-        fs.copyFileSync(job.out, job.cached)
-        fs.writeFileSync(job.reportFile, JSON.stringify(report))
+      if (job.cache === 'miss' && job.cacheable && !fs.lstatSync(job.cached, { throwIfNoEntry: false })?.isDirectory() && !fs.lstatSync(job.reportFile, { throwIfNoEntry: false })?.isDirectory()) {
+        publish(job.cached, file => fs.copyFileSync(job.out, file))
+        publish(job.reportFile, file => fs.writeFileSync(file, JSON.stringify(report)))
       }
       return { ...report, cache: job.cache, cacheKey: job.key, cacheLookupMs: job.cacheLookupMs ?? null }
     })
@@ -219,7 +244,7 @@ export async function renderEpisode(episodeDir, options = {}) {
       for (const chunk of chunks) audioKey.update(fs.readFileSync(chunk.file))
       const cachedAudio = path.join(cacheDir, `audio-${audioKey.digest('hex')}.wav`)
       const normalized = path.join(temp, 'normalized.wav')
-      if (!options.noCache && fs.existsSync(cachedAudio) && fs.existsSync(`${cachedAudio}.json`)) {
+      if (!options.noCache && regularFile(cachedAudio) && regularFile(`${cachedAudio}.json`)) {
         fs.copyFileSync(cachedAudio, normalized)
         loudness = { ...readJson(`${cachedAudio}.json`), cache: 'hit' }
       } else {
@@ -231,8 +256,10 @@ export async function renderEpisode(episodeDir, options = {}) {
         const measured = `measured_I=${first.input_i}:measured_TP=${first.input_tp}:measured_LRA=${first.input_lra}:measured_thresh=${first.input_thresh}:offset=${first.target_offset}`
         const second = loudnessResult(run('ffmpeg', ['-hide_banner', '-nostats', '-loglevel', 'info', '-y', ...inputs, '-filter_complex', `${concat},loudnorm=${target}:${measured}:linear=true:print_format=json,aresample=48000[audio]`, '-map', '[audio]', '-ac', '2', normalized], timeoutMs, true))
         loudness = { targetLufs, targetTruePeakDbtp, measuredIntegratedLufs: Number(second.output_i), measuredTruePeakDbtp: Number(second.output_tp), measuredLra: Number(second.output_lra) }
-        fs.copyFileSync(normalized, cachedAudio)
-        fs.writeFileSync(`${cachedAudio}.json`, JSON.stringify(loudness))
+        if (!fs.lstatSync(cachedAudio, { throwIfNoEntry: false })?.isDirectory() && !fs.lstatSync(`${cachedAudio}.json`, { throwIfNoEntry: false })?.isDirectory()) {
+          publish(cachedAudio, file => fs.copyFileSync(normalized, file))
+          publish(`${cachedAudio}.json`, file => fs.writeFileSync(file, JSON.stringify(loudness)))
+        }
         loudness = { ...loudness, cache: 'miss' }
       }
       args.push('-i', normalized, '-map', '0:v:0', '-map', '1:a:0', '-c:v', 'copy', '-c:a', 'aac', '-ar', '48000', '-ac', '2')
@@ -250,7 +277,7 @@ export async function renderEpisode(episodeDir, options = {}) {
       episodeOutput: output,
     }))
     for (let i = 0; i < persistentReports.length; i += 1) {
-      fs.writeFileSync(path.join(reportsDir, `${scenes[i].id}.render.json`), `${JSON.stringify(persistentReports[i], null, 2)}\n`)
+      publish(path.join(reportsDir, `${scenes[i].id}.render.json`), file => fs.writeFileSync(file, `${JSON.stringify(persistentReports[i], null, 2)}\n`))
     }
     if (options.overwrite) fs.renameSync(staged, output)
     else { fs.linkSync(staged, output); fs.unlinkSync(staged) }

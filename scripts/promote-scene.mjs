@@ -21,7 +21,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import os from 'node:os'
 import { pathToFileURL } from 'node:url'
-import { createHash } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
 import { codeRoot as defaultCodeRoot, ensureWorkspace, resolveDataRoot, resolveStudioPaths } from './studio-paths.mjs'
 
 const ID = /^[a-z][a-z0-9-]{3,}$/
@@ -197,11 +197,12 @@ export function promoteScene(options) {
   let lock
   const deadline = Date.now() + 30000
   let owner
+  const token = randomUUID()
   while (lock === undefined) {
     try {
       lock = fs.openSync(lockPath, 'wx')
       try {
-        fs.writeFileSync(lock, JSON.stringify({ pid: process.pid, host: os.hostname(), createdAt: new Date().toISOString() }))
+        fs.writeFileSync(lock, JSON.stringify({ pid: process.pid, host: os.hostname(), createdAt: new Date().toISOString(), token }))
       } catch (error) {
         fs.closeSync(lock)
         fs.unlinkSync(lockPath)
@@ -214,16 +215,7 @@ export function promoteScene(options) {
         if (owner.host === os.hostname() && Number.isInteger(owner.pid) && owner.pid > 0) {
           let alive = true
           try { process.kill(owner.pid, 0) } catch (probe) { if (probe.code === 'ESRCH') alive = false }
-          if (!alive) {
-            const stale = `${lockPath}.stale-${process.pid}-${Date.now()}`
-            try {
-              fs.renameSync(lockPath, stale)
-              fs.unlinkSync(stale)
-            } catch (moveError) {
-              if (moveError.code !== 'ENOENT') throw moveError
-            }
-            continue
-          }
+          if (!alive) throw Object.assign(new Error(`Stale catalog lock ${lockPath}; inspect and remove the lock manually only if no promotion is running`), { code: 'ESTALE' })
         }
       } catch (readError) {
         if (readError.code && readError.code !== 'ENOENT') throw readError
@@ -326,7 +318,11 @@ export function promoteScene(options) {
   }
   } finally {
     fs.closeSync(lock)
-    fs.unlinkSync(lockPath)
+    try {
+      if (JSON.parse(fs.readFileSync(lockPath, 'utf8')).token === token) fs.unlinkSync(lockPath)
+    } catch (error) {
+      if (error.code !== 'ENOENT') throw error
+    }
   }
 }
 

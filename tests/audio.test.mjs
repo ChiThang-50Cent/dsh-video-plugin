@@ -233,3 +233,10 @@ test('bounded timeout returns when an escaped descendant keeps output pipes open
   assert.ok(Date.now() - start < 1700)
   assert.ok(fs.existsSync(pidFile))
 })
+
+test('bounded execution accepts large stdin without exceeding argv limits', () => {
+  const input = 'x'.repeat(512 * 1024)
+  const result = runBounded(process.execPath, ['-e', 'process.stdin.pipe(process.stdout)'], { input, timeoutMs: 5000 })
+  assert.equal(result.ok, true)
+  assert.equal(result.stdout.length, input.length)
+})
