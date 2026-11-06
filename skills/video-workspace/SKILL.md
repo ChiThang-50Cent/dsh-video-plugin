@@ -1,6 +1,6 @@
 ---
 name: video-workspace
-description: Organize portable multi-series video workspaces, episode sources, reusable assets, caches, worker sandboxes and release files across an external data root. Use when starting, resuming, publishing or safely cleaning a production.
+description: Initialize and organize video workspaces, series, episode files, assets, caches and releases. Use for workspace setup or file organization ("tạo workspace", "tạo không gian làm việc", "quản lý dự án video"); use video-intake to summarize a request and its sources.
 ---
 
 # Workspace and provenance

@@ -1,6 +1,6 @@
 ---
 name: video-produce
-description: Coordinate creation, revision, or full production of any video. Invoke when the user wants a finished video, episode, short, explainer, documentary, or video series; drive narration-first production with two G0 gates, risk-based QA and a strict release check.
+description: Coordinate an entire video deliverable from brief through release. Use for a finished video, episode, explainer or series ("làm video", "sản xuất video", "video giải thích"); delegate individual script, audio, scene and QA tasks to their specialist skills.
 ---
 
 # Video Produce: coordinator

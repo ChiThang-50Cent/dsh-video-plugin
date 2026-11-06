@@ -1,6 +1,6 @@
 ---
 name: video-intake
-description: Understand a natural-language video request and source materials, determine viewers, educational claims, rights, production mode and quality constraints, and write a compact production brief. Use before scripts or scene coding for a new or revised video.
+description: Analyze a video request and its source materials into a production brief, including audience, claims and constraints. Use for request intake or source summaries ("tóm tắt yêu cầu", "tóm tắt tài liệu nguồn", "lập brief"); use video-workspace for workspace setup.
 ---
 
 # Video Intake

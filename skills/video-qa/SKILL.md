@@ -1,6 +1,6 @@
 ---
 name: video-qa
-description: Run efficient, risk-based QA for narration integrity/editorial evidence, scene code, media, timing, speech and final release. Use during changed-scene testing, integration and delivery without one AI reviewer per scene.
+description: Perform risk-based quality assurance on narration, scenes, media and release evidence. Use for scene or final video review ("kiểm tra video", "đánh giá chất lượng", "QA trước khi xuất bản"); run the applicable validation gates as part of QA, not as a substitute for review.
 ---
 
 # Risk-based quality assurance

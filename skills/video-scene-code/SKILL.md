@@ -1,6 +1,6 @@
 ---
 name: video-scene-code
-description: Implement or patch video scene code and renderer adapters. Use only for scenes that cannot be instantiated from a validated template, and for maintaining scene components, lint rules and animation tests.
+description: Implement custom C scene code in an assigned worker sandbox. Use for custom scene animation or coding ("code cảnh", "lập trình cảnh", "cảnh đồ thị") when templates or minimal reuse cannot meet the need; use video-reuse for A/B scenes.
 ---
 
 # Scene coding contract

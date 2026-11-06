@@ -1,6 +1,6 @@
 ---
 name: video-audio
-description: Segment frozen narration, verify the speech provider/device with a sample, synthesize and time audio with bounded jobs and a meaning-preserving pronunciation contract. Use after narration passes G0.
+description: Segment approved narration, synthesize or re-synthesize speech, and measure audio timing. Use for voice-over, TTS or re-voicing ("lồng tiếng", "lồng tiếng lại", "tổng hợp giọng nói") after narration passes G0; script writing belongs to video-narration.
 ---
 
 # Audio and speech

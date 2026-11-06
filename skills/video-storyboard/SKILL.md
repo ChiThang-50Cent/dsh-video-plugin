@@ -1,6 +1,6 @@
 ---
 name: video-storyboard
-description: Map frozen, reviewed narration and its through-line into visual beats and shot specifications for any video genre. Use for scene plans, shot lists, motion concepts, b-roll plans or edit decisions before coding or rendering.
+description: Map approved narration or a silent visual brief into visual beats and shot specifications. Use for storyboards, shot lists or scene breakdowns ("chia phân cảnh", "lên phân cảnh"); use video-scene-code to implement custom scenes, not to plan them.
 ---
 
 # Storyboard and shot design

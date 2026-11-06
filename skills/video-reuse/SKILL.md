@@ -1,6 +1,6 @@
 ---
 name: video-reuse
-description: Search, adapt, register, and promote validated scene templates and components across episodes and genres. Use before writing new scene code or when growing a series library from successful scenes.
+description: Find, adapt and promote validated scene templates and components across episodes. Use to reuse an existing scene or grow the scene library ("tái sử dụng cảnh", "dùng lại cảnh", "thư viện cảnh"); use video-scene-code only when a custom C scene is needed.
 ---
 
 # Reuse-first scene library

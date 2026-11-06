@@ -1,6 +1,6 @@
 ---
 name: video-narration
-description: Write, audit, edit, review and freeze listener-first spoken narration with a mechanical integrity gate and a separate evidence-based editorial gate. Use for any narrated explainer, documentary, essay, history or science piece, and to repair mechanical scene-driven scripts.
+description: Write, audit, review and freeze the spoken script. Use for narration writing or revision ("viết kịch bản lời đọc", "kịch bản thuyết minh"); for synthesis or re-voicing an approved script, use video-audio instead.
 ---
 
 # Narration: editorial controller (G0)
