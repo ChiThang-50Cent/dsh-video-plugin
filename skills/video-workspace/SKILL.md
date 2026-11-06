@@ -22,6 +22,8 @@ Narration revisions use `scripts/revise-narration.mjs`; it writes `narration-rev
 
 Reusable catalog, templates, components and previews live under `library/`; it is not an output dump. Narration style packages are `library/styles/<id>/` with `style.json`, source reference (or `sourceBundled: false` + `externalSource`), and `notes.md`. A project opts in with `project.json.styleRefs`; validate with `scripts/validate-style-refs.mjs <project-dir>`. Reference material stays in the library, never in `skills/` or the installed bundle.
 
+Narrator voices are packages `library/voices/<id>/` (reference WAV, exact transcript, language, rights; see `library/voices/README.md` at the code root), selected by `production.json.voicePackage` > `project.json.voicePackage`, with no default. Add one with `node <studio>/scripts/new-voice.mjs <id> --reference <wav> --ref-text "<exact words>" --rights "<note>"`; switch by changing `voicePackage` and re-synthesizing; delete only once nothing references it. Never copy a voice into `skills/` or the bundle.
+
 Visual looks are separate packages `library/visual-styles/<id>/` (`style.json` tokens, `fonts/`, `refs/`, `notes.md`; see `library/visual-styles/README.md` at the code root). Selection: `production.json.visualStyle` (this episode) > `project.json.visualStyle` (the series) > built-in `default`. To change the look:
 
 - reuse an existing look: set `visualStyle` on the project (whole series) or on one episode's `production.json` (one-off);

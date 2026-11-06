@@ -1,8 +1,8 @@
-# Portable Video Studio for DeepSeek Harness 0.5.0
+# Portable Video Studio for DeepSeek Harness
 
 This repository is two things in one checkout: an installable **DSH bundle** that adds two Agent Presets (`video-producer`, `video-scene-worker`), and a portable **video-studio workspace** with nine skills, contract examples, deterministic helpers and a per-episode tree. The built-in Skia adapter is the default for code-animated 2D scenes when preflight passes; no `math-motion` project, OmniVoice, Python runtime, or particular genre is required.
 
-The 0.5 line makes narration quality a real evidence-based gate, adds a meaning-preserving pronunciation contract, separates lint from release, and hardens workspace, audio, metrics and worker integration.
+Current version: 0.6.0. The 0.6 line adds switchable visual styles and narrator voice packages, a parallel cached Skia renderer, batch GPU speech and a loudness gate. The 0.5 line made narration quality a real evidence-based gate. Every change is recorded in [CHANGELOG.md](CHANGELOG.md); releases are tagged `v<version>`.
 
 ## Contents
 
@@ -143,22 +143,25 @@ From the workspace, create an episode with `node /path/to/video-studio/scripts/n
 
 ## Audio preflight and runtime
 
-Before batch speech:
+The narrator voice is a package `<dataRoot>/library/voices/<id>/` (reference recording, exact transcript, language, rights), selected by `production.json.voicePackage` > `project.json.voicePackage`. There is no default voice. Create one and listen to it before use:
 
 ```bash
+node scripts/new-voice.mjs narrator-vi --reference take.wav --ref-text "exact transcript" \
+  --rights "recorded by the channel owner for this channel"
+node scripts/audio-preflight.mjs --voice-package narrator-vi --provider-command /venv/bin/omnivoice-infer \
+  --model /path/to/OmniVoice-checkpoint --synthesize-sample --require-gpu --json
 node scripts/audio-preflight.mjs --provider espeak-ng --voice-reference voice.wav \
-  --synthesize-sample --json
-node scripts/audio-preflight.mjs --provider omnivoice --provider-command /venv/bin/omnivoice-infer \
-  --model /path/to/OmniVoice-checkpoint --voice-reference voice.wav --ref-text "exact transcript" \
-  --synthesize-sample --require-gpu --json
+  --synthesize-sample --json          # one-off reference without a package
 ```
+
+Switch the voice by changing `voicePackage` and re-synthesizing; segments spoken by another voice are redone automatically. Details: [library/voices/README.md](library/voices/README.md).
 
 - `nvidia-smi` proves hardware, not that the provider uses it. The provider command, configured device probe, voice reference and short measured sample must pass. `--require-gpu` refuses an unknown/CPU backend instead of silently falling back.
 - Voice reference checks cover readability, duration, sample rate, silence and clipping; language/timbre fit still needs listening.
 - Use bounded jobs with explicit timeouts/retries (`scripts/lib/bounded.mjs`). Never retry forever.
 - `node scripts/qa-audio.mjs <episode> --segments audio/segments.json [--audio]` checks numbers/operators/omissions deterministically and, with `--audio`, silence/clipping. ASR is optional advisory evidence, not truth.
 - Measure every WAV; never use word-count estimates as measured timing. Preserve valid caches and attribution.
-- OmniVoice batch: `node scripts/synthesize-narration.mjs <episode> --python /venv/bin/python --model <checkpoint> --voice-reference voice.wav --ref-text "<transcript>" --require-gpu [--timeout-ms 120000] [--retries 1] [--overall-timeout-ms 3600000] --json` keeps one model loaded for every segment (`scripts/lib/tts/omnivoice_batch.py`), refuses a CPU device, skips segments whose fingerprint and file hash still match, and writes `audio/manifest.json` `chunks[]`. Run audio preflight first in the same execution context. Measured: 6 segments (118 s of speech) in 39.5 s versus about 60 s with one process per segment.
+- OmniVoice batch: `node scripts/synthesize-narration.mjs <episode> --python /venv/bin/python --model <checkpoint> --require-gpu [--voice-package <id>] [--timeout-ms 120000] [--retries 1] [--overall-timeout-ms 3600000] --json` uses the episode's voice package (or `--voice-reference`/`--ref-text` for a one-off), keeps one model loaded for every segment (`scripts/lib/tts/omnivoice_batch.py`), refuses a CPU device, skips segments whose fingerprint and file hash still match, and writes `audio/manifest.json` `chunks[]` plus `engine.voicePackage` `{id, sha256}`. Release fails when that record does not match the selected package. Run audio preflight first in the same execution context. Measured: 6 segments (118 s of speech) in 39.5 s versus about 60 s with one process per segment.
 
 ## Scene library and reuse
 

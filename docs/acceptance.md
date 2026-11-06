@@ -30,6 +30,7 @@
 - [ ] Release rejects stale artifacts and conflicting production-mode overrides; unavailable strict audio checks cannot pass.
 - [ ] GPU requirement failure stops rather than silently using CPU; jobs have explicit timeout/retry policy.
 - [ ] OmniVoice preflight passes `--model`/`--ref-text`; `synthesize-narration.mjs` loads the model once, refuses a CPU device, enforces per-segment and overall timeouts, and reuses only segments whose fingerprint and file hash match.
+- [ ] Voice packages: `production.json.voicePackage` overrides `project.json.voicePackage`; no selection stops synthesis instead of borrowing a voice; `new-voice.mjs` rejects an unsuitable reference or missing rights/transcript and never overwrites; a package cannot be mixed with `--voice-reference`; switching or re-recording a voice re-synthesizes every segment; release fails unless `audio/manifest.json` records the selected package's current hash.
 - [ ] `qa-audio.mjs` checks numbers/operators/omissions and optional audio silence/clipping; ASR evidence is not truth.
 
 ## Scene/render/QA

@@ -64,9 +64,8 @@ Verify from a command executed **inside the same DSH sandbox context** as the in
 ```bash
 node /absolute/path/to/installed/video-studio/scripts/preflight.mjs --json
 node /absolute/path/to/installed/video-studio/scripts/audio-preflight.mjs \
-  --provider omnivoice --provider-command /absolute/path/to/venv/bin/omnivoice-infer \
-  --model /absolute/path/to/OmniVoice-checkpoint --voice-reference /absolute/path/to/voice.wav \
-  --ref-text "exact transcript of the reference" --synthesize-sample --require-gpu --json
+  --voice-package <id> --provider-command /absolute/path/to/venv/bin/omnivoice-infer \
+  --model /absolute/path/to/OmniVoice-checkpoint --synthesize-sample --require-gpu --json
 ```
 
 The GPU section distinguishes `available`, `absent` and `hidden-by-sandbox`; host hardware evidence alone is not provider readiness. The recommended encoder is `h264_nvenc` only after a real NVENC encode passes, otherwise `libx264` with a reason. An optional `--python /path/to/python` checks that interpreter's Torch CUDA availability. For speech, require the provider's verified GPU identity and a passing sample; use a suitable voice reference and listen for quality.
@@ -75,7 +74,7 @@ The built-in Skia renderer defaults to code-animated 2D scenes when preflight pa
 
 Do not overlap TTS synthesis with rendering. The renderer's free-RAM guard can refuse to start; libx264 encoding is thread-capped and the renderer attempts reduced scheduling priority, recording priority failures. Keep scene workers to at most two concurrently; the episode renderer's own scene processes (`--concurrency`, at most three with NVENC) are a separate, bounded limit.
 
-For batch speech use `synthesize-narration.mjs <episode> --python /absolute/path/to/venv/bin/python --model <checkpoint> --voice-reference <wav> --ref-text "<transcript>" --require-gpu` after the GPU audio preflight passes in the same execution context. It loads the model once (`scripts/lib/tts/omnivoice_batch.py`), refuses a CPU device instead of falling back, and bounds each segment and the whole job with timeouts. With an offline Hugging Face cache, pass the local snapshot path as `--model` and set `HF_HUB_OFFLINE=1`. `omnivoice-infer-batch` has no device or reference-transcript control; avoid it.
+For batch speech use `synthesize-narration.mjs <episode> --python /absolute/path/to/venv/bin/python --model <checkpoint> --require-gpu` (voice from the episode's `voicePackage`, or `--voice-package <id>`) after the GPU audio preflight passes in the same execution context. It loads the model once (`scripts/lib/tts/omnivoice_batch.py`), refuses a CPU device instead of falling back, and bounds each segment and the whole job with timeouts. With an offline Hugging Face cache, pass the local snapshot path as `--model` and set `HF_HUB_OFFLINE=1`. `omnivoice-infer-batch` has no device or reference-transcript control; avoid it.
 
 **Security:** this grants sandboxed commands access to GPU devices, with the associated device/driver attack surface and shared GPU resources. It does not change the sandbox filesystem policy. To revert, remove the added row or restore the prior `sandbox` row and its configuration in `$DSH_HOME/cordis.patch.yml`, then restart DSH. Re-run preflight in the sandbox to check the resulting visibility.
 

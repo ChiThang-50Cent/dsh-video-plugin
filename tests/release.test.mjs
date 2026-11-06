@@ -10,6 +10,7 @@ import { qaMedia } from '../scripts/qa-media.mjs'
 import { createEpisode } from '../scripts/new-episode.mjs'
 import { makeEpisode, makeSegments, writeSegmentManifest } from './helpers/episode-fixtures.mjs'
 import { resolveVisualStyle } from '../scripts/lib/render/theme.mjs'
+import { loadVoicePackage } from '../scripts/lib/voice.mjs'
 
 const DEFAULT_STYLE_SHA = resolveVisualStyle().sha256
 
@@ -232,4 +233,39 @@ test('fully verified narrated episode passes release', async (t) => {
   fs.writeFileSync(mediaPath, JSON.stringify(media))
   const failedLoudness = await validateEpisode(episode.dir, { release: true })
   assert.match(failedLoudness.release.errors.join('\n'), /loudness check did not pass/)
+})
+
+test('a selected voice package blocks release until the audio was synthesized with its current hash', async (t) => {
+  const narration = '# Buổi sáng\n\nÁnh sáng tràn qua khung cửa và đọng lại trên mặt bàn gỗ. Người nghe có thể hình dung một căn phòng yên tĩnh, nơi mọi vật còn đang ngủ. Không có con số nào cần kiểm chứng, không có tuyên bố khoa học nào được đưa ra. Đây chỉ là một đoạn mở đầu quan sát, để người xem chậm lại trước khi bước vào câu chuyện.\n\nRồi tiếng chim ngoài hiên cất lên, rất khẽ, như một dấu phẩy trong câu văn dài của buổi sớm. Không có gì phải chứng minh; chỉ có một trạng thái cần được nghe thấy.\n'
+  const fixture = makeEpisode(t, { narration })
+  const dataRoot = tempRoot(t)
+  const dir = path.join(dataRoot, 'projects', 'series', 'episodes', 'ep-001')
+  fs.cpSync(fixture.dir, dir, { recursive: true })
+  const segments = makeSegments(fixture.parsed, fixture.hash, 1)
+  writeSegmentManifest(dir, segments)
+  const audio = path.join(dir, 'audio', 'voice.wav')
+  assert.equal(spawnSync('ffmpeg', ['-v', 'error', '-f', 'lavfi', '-i', 'sine=duration=1', '-af', 'volume=6dB', '-y', audio]).status, 0)
+  const master = path.join(dir, 'exports', 'master.mp4')
+  assert.equal(spawnSync('ffmpeg', ['-v', 'error', '-f', 'lavfi', '-i', 'color=s=320x180:d=2:r=30', '-i', audio, '-c:v', 'mpeg4', '-c:a', 'aac', '-y', master]).status, 0)
+  fs.writeFileSync(path.join(dir, 'storyboard.json'), JSON.stringify({ scenes: [{ id: 's01-title', reuseClass: 'A', templateId: 'title', narrationSegments: [segments.segments[0].id] }] }))
+  fs.writeFileSync(path.join(dir, 'timeline.json'), JSON.stringify({ durationSec: 2, scenes: [{ id: 's01-title', startSec: 0, durationSec: 2 }] }))
+  fs.writeFileSync(path.join(dir, 'qa', 'scene', 's01-title.json'), JSON.stringify({ status: 'PASS', narrationSha256: fixture.hash, styleSha256: DEFAULT_STYLE_SHA }))
+  fs.writeFileSync(path.join(dir, 'qa', 'final.json'), JSON.stringify({ status: 'PASS', blockers: [] }))
+  fs.writeFileSync(path.join(dir, 'qa', 'media.json'), JSON.stringify(qaMedia(master)))
+  const voiceDir = path.join(dataRoot, 'library', 'voices', 'narrator')
+  fs.mkdirSync(voiceDir, { recursive: true })
+  fs.writeFileSync(path.join(voiceDir, 'reference.wav'), 'RIFF-narrator')
+  fs.writeFileSync(path.join(voiceDir, 'voice.json'), JSON.stringify({ schemaVersion: 1, id: 'narrator', provider: 'omnivoice', language: 'vi', reference: { file: 'reference.wav', text: 'Câu mẫu.' }, rights: 'own voice' }))
+  fs.writeFileSync(path.join(dataRoot, 'projects', 'series', 'project.json'), JSON.stringify({ voicePackage: 'narrator' }))
+  const writeAudio = (voicePackage) => fs.writeFileSync(path.join(dir, 'audio', 'manifest.json'), JSON.stringify({ narrationSha256: fixture.hash, engine: { voicePackage }, chunks: [{ id: segments.segments[0].id, path: 'audio/voice.wav', durationSec: 1, sha256: createHash('sha256').update(fs.readFileSync(audio)).digest('hex') }] }))
+
+  writeAudio(null)
+  const unrecorded = await validateEpisode(dir, { release: true })
+  assert.match(unrecorded.release.errors.join('\n'), /selected voice package "narrator"/)
+  writeAudio({ id: 'narrator', sha256: loadVoicePackage('narrator', dataRoot).sha256 })
+  const matched = await validateEpisode(dir, { release: true })
+  assert.equal(matched.release.status, 'PASS', matched.release.errors.join('\n'))
+  fs.writeFileSync(path.join(voiceDir, 'reference.wav'), 'RIFF-rerecorded')
+  const rerecorded = await validateEpisode(dir, { release: true })
+  assert.match(rerecorded.release.errors.join('\n'), /selected voice package "narrator"/)
 })

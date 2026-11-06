@@ -14,6 +14,7 @@ import { createHash } from 'node:crypto'
 import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { episodeContext } from '../episode-artifacts.mjs'
 
 export const DEFAULT_VISUAL_STYLE = 'default'
 /** Colour names every look defines, so any scene renders correctly under any style. */
@@ -41,16 +42,6 @@ export function findEpisodeRoot(start) {
     if (parent === dir) return null
     dir = parent
   }
-}
-
-/** Episode layout is `<dataRoot>/projects/<slug>/episodes/<episode>`. */
-function episodeContext(episodeRoot) {
-  const projectDir = path.resolve(episodeRoot, '..', '..')
-  const dataRoot = path.resolve(projectDir, '..', '..')
-  const production = readJson(path.join(episodeRoot, 'production.json'), 'production.json')
-  const projectFile = path.join(projectDir, 'project.json')
-  const project = fs.existsSync(projectFile) ? readJson(projectFile, 'project.json') : {}
-  return { dataRoot, production, project }
 }
 
 /** Every structural problem in a parsed style.json; empty when usable. */

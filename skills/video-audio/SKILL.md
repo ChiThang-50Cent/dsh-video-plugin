@@ -14,20 +14,27 @@ The audio step consumes a frozen script. It never improves, shortens, paraphrase
 - If the review is missing, stale or blocked, stop and return the blocker. Do not synthesize a draft.
 - `silent`/`text-only` productions have no voice-over; do not fabricate narration. Validate music/SFX and visual timing instead.
 
+## Choose the voice
+
+The narrator is a voice package `<dataRoot>/library/voices/<id>/` (reference WAV, exact transcript, language, rights; see `library/voices/README.md` at the code root). `production.json.voicePackage` (this episode) overrides `project.json.voicePackage` (the series). There is no default voice: if none is selected, ask the user which voice to use; never borrow another speaker.
+
+- New voice from a recording the user supplies: `node <studio>/scripts/new-voice.mjs <id> --reference <wav> --ref-text "<exact words>" --rights "<owner and permitted use>"`, then preflight a sample and let the user listen before setting `voicePackage`.
+- Switching the voice is a `voicePackage` change followed by re-synthesis; segments spoken by another voice are redone. Render the re-voiced cut to a new path.
+- `--voice-reference`/`--ref-text` remain for a one-off test; they cannot be combined with a package, and a release whose episode selects a package requires audio made with it.
+
 ## Preflight the actual backend
 
 Before batch synthesis, run:
 
 ```bash
-node <studio>/scripts/audio-preflight.mjs --provider <id> --voice <id> \
-  [--provider-command <absolute-path-to-provider>] --voice-reference <wav> \
-  [--model <checkpoint-dir|repo>] [--ref-text <exact reference transcript>] \
+node <studio>/scripts/audio-preflight.mjs --voice-package <id> \
+  [--provider-command <absolute-path-to-provider>] [--model <checkpoint-dir|repo>] \
   --synthesize-sample [--require-gpu] [--json]
 ```
 
 - `nvidia-smi` proves hardware, not that the TTS provider uses it. Provider/device readiness is verified by the configured device probe **and** a short sample. If `--require-gpu` cannot be verified, stop; never silently run CPU for a long batch.
-- For OmniVoice, select `--provider omnivoice` and, if its virtual environment is not on PATH, pass `--provider-command /path/to/venv/bin/omnivoice-infer`. With `--require-gpu`, the sample uses `--device cuda` and the provider's sibling Python must affirm a GPU identity. If the sandbox hides the GPU, follow `docs/dsh.md` at the studio code root.
-- Offline OmniVoice (`HF_HUB_OFFLINE=1`) needs `--model <local snapshot dir>` (a cached HF repo id without `refs/main` cannot resolve) and `--ref-text` with the exact transcript of the voice reference (otherwise the CLI loads a Whisper model to transcribe it). Never wrap the provider in an ad-hoc shell adapter for this.
+- For OmniVoice, if its virtual environment is not on PATH, pass `--provider-command /path/to/venv/bin/omnivoice-infer`. With `--require-gpu`, the sample uses `--device cuda` and the provider's sibling Python must affirm a GPU identity. If the sandbox hides the GPU, follow `docs/dsh.md` at the studio code root.
+- Offline OmniVoice (`HF_HUB_OFFLINE=1`) needs `--model <local snapshot dir>` (a cached HF repo id without `refs/main` cannot resolve) and the exact reference transcript (the package's `reference.text`); otherwise the CLI loads Whisper to transcribe it. Never wrap the provider in an ad-hoc shell adapter.
 
 ## Batch synthesis
 
@@ -36,7 +43,7 @@ After the preflight passes, synthesize the whole `audio/segments.json` with one 
 ```bash
 node <studio>/scripts/synthesize-narration.mjs <episode> \
   --python /path/to/venv/bin/python --model <checkpoint-dir> \
-  --voice-reference <wav> --ref-text "<exact transcript>" --language vi \
+  --language vi [--voice-package <id>] \
   --require-gpu [--timeout-ms 120000] [--overall-timeout-ms 3600000] [--retries 1]
 ```
 

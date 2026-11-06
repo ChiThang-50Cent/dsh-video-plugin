@@ -6,6 +6,7 @@ import { spawn } from 'node:child_process'
 import { createInterface } from 'node:readline'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { findCommand, runBounded } from './lib/bounded.mjs'
+import { applyVoicePackage, resolveVoicePackage } from './lib/voice.mjs'
 
 const helper = fileURLToPath(new URL('./lib/tts/omnivoice_batch.py', import.meta.url))
 const hash = (value) => createHash('sha256').update(value).digest('hex')
@@ -13,7 +14,7 @@ const readJson = (file) => JSON.parse(fs.readFileSync(file, 'utf8'))
 
 function parseArgs(argv) {
   const options = { python: 'python', model: 'k2-fsa/OmniVoice', device: 'cuda', timeoutMs: 120000, overallTimeoutMs: 3600000, retries: 1, segments: 'audio/segments.json' }
-  const names = { '--python': 'python', '--helper': 'helper', '--model': 'model', '--device': 'device', '--voice-reference': 'voiceReference', '--ref-text': 'refText', '--language': 'language', '--timeout-ms': 'timeoutMs', '--overall-timeout-ms': 'overallTimeoutMs', '--retries': 'retries', '--segments': 'segments' }
+  const names = { '--python': 'python', '--helper': 'helper', '--model': 'model', '--device': 'device', '--voice-package': 'voicePackage', '--data-root': 'dataRoot', '--voice-reference': 'voiceReference', '--ref-text': 'refText', '--language': 'language', '--timeout-ms': 'timeoutMs', '--overall-timeout-ms': 'overallTimeoutMs', '--retries': 'retries', '--segments': 'segments' }
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i]
     if (arg === '--require-gpu') options.requireGpu = true
@@ -28,7 +29,8 @@ function parseArgs(argv) {
     options[name] = Number(options[name])
     if (!Number.isSafeInteger(options[name]) || options[name] < (name === 'retries' ? 0 : 1)) throw new Error(`invalid ${name}`)
   }
-  if (!options.episode || !options.voiceReference || !options.refText) throw new Error('episode, --voice-reference and --ref-text are required')
+  if (!options.episode) throw new Error('episode is required')
+  if ((options.voiceReference === undefined) !== (options.refText === undefined)) throw new Error('--voice-reference and --ref-text go together')
   if (options.requireGpu && !/^cuda(?::\d+)?$/.test(options.device)) throw new Error('--require-gpu requires a CUDA device; refusing CPU fallback')
   return options
 }
@@ -71,8 +73,24 @@ class Worker {
   }
 }
 
-export async function synthesize(options) {
-  const episode = fs.realpathSync(path.resolve(options.episode))
+/**
+ * Speaker selection: --voice-package <id>, else the explicit --voice-reference/--ref-text
+ * pair (one-off), else the package selected by production.json/project.json.
+ */
+function selectVoice(episode, options) {
+  const pkg = options.voicePackage !== undefined || options.voiceReference === undefined
+    ? resolveVoicePackage({ episodeRoot: episode, id: options.voicePackage, dataRoot: options.dataRoot && path.resolve(options.dataRoot) })
+    : null
+  if (pkg === null && options.voiceReference === undefined) throw new Error('no voice selected: set voicePackage in production.json/project.json, or pass --voice-package <id> or --voice-reference/--ref-text')
+  if (pkg === null) return { options, voicePackage: null }
+  if (pkg.voice.provider !== 'omnivoice' || pkg.reference === null) throw new Error(`voice package "${pkg.id}" needs provider omnivoice and a reference recording`)
+  const { provider: _provider, voice: _voice, ...merged } = applyVoicePackage(options, pkg)
+  return { options: merged, voicePackage: { id: pkg.id, sha256: pkg.sha256, source: pkg.source } }
+}
+
+export async function synthesize(input) {
+  const episode = fs.realpathSync(path.resolve(input.episode))
+  const { options, voicePackage } = selectVoice(episode, input)
   const segments = readJson(path.resolve(episode, options.segments))
   const narrationSha256 = hash(fs.readFileSync(path.join(episode, 'narration.md')))
   if (segments.narrationSha256 !== narrationSha256) throw new Error('segments are stale relative to narration.md')
@@ -113,7 +131,7 @@ export async function synthesize(options) {
     const { stale: _stale, staleReason: _staleReason, generatedAt: _generatedAt, ...rest } = prior
     const processed = new Map(chunks.map((chunk) => [chunk.segmentId ?? chunk.id, chunk]))
     const savedChunks = complete ? chunks : segments.segments.map((segment) => processed.get(segment.id) ?? previous.get(segment.id)).filter(Boolean)
-    const record = { ...rest, schemaVersion: 1, narrationSha256, ...(complete ? { generatedAt: new Date().toISOString() } : { stale: true, staleReason: 'synthesis in progress' }), engine: { ...prior.engine, provider: 'omnivoice', version: probedVersion ?? prior.engine?.version ?? 'unknown', command: options.python, model: options.model, device: ready?.device ?? prior.engine?.device ?? options.device, voiceReference: options.voiceReference, voiceReferenceSha256: refHash, referenceText: options.refText, settings: { language: options.language ?? null, device: options.device } }, chunks: savedChunks }
+    const record = { ...rest, schemaVersion: 1, narrationSha256, ...(complete ? { generatedAt: new Date().toISOString() } : { stale: true, staleReason: 'synthesis in progress' }), engine: { ...prior.engine, provider: 'omnivoice', version: probedVersion ?? prior.engine?.version ?? 'unknown', command: options.python, model: options.model, device: ready?.device ?? prior.engine?.device ?? options.device, voicePackage, voiceReference: options.voiceReference, voiceReferenceSha256: refHash, referenceText: options.refText, settings: { language: options.language ?? null, device: options.device } }, chunks: savedChunks }
     const temp = `${manifestPath}.tmp-${process.pid}`
     fs.writeFileSync(temp, `${JSON.stringify(record, null, 2)}\n`)
     fs.renameSync(temp, manifestPath)
@@ -157,7 +175,7 @@ export async function synthesize(options) {
       if (failure) throw new Error(`synthesis failed for ${segment.id}: ${failure.message}`)
     }
     save(true)
-    return { synthesized, reused, device: ready?.device ?? prior.engine?.device ?? options.device, chunks: chunks.length }
+    return { synthesized, reused, device: ready?.device ?? prior.engine?.device ?? options.device, voicePackage: voicePackage?.id ?? null, chunks: chunks.length }
   } finally { worker?.stop() }
 }
 

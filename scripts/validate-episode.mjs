@@ -25,6 +25,7 @@ import { findMaster, resolveProductionMode } from './lib/episode-artifacts.mjs'
 import { runBounded } from './lib/bounded.mjs'
 import { validateNarration } from './validate-narration.mjs'
 import { resolveVisualStyle } from './lib/render/theme.mjs'
+import { resolveVoicePackage } from './lib/voice.mjs'
 
 function readJsonFile(file, label, errors) {
   try {
@@ -407,6 +408,16 @@ export async function validateEpisode(episodeDir, options = {}) {
           releaseErrors.push('audio/manifest.json has no narrationSha256 binding; release cannot prove the audio belongs to the frozen script')
         } else if (existsSync(narrationPath) && String(audio.narrationSha256).toLowerCase() !== sha256File(narrationPath)) {
           releaseErrors.push('audio/manifest.json narrationSha256 is stale relative to narration.md')
+        }
+        let voice = null
+        try {
+          voice = resolveVoicePackage({ episodeRoot: root })
+        } catch (error) {
+          releaseErrors.push(`voice package cannot be resolved: ${error.message}`)
+        }
+        const recorded = audio.engine?.voicePackage
+        if (voice !== null && (recorded?.id !== voice.id || typeof recorded?.sha256 !== 'string' || recorded.sha256.toLowerCase() !== voice.sha256)) {
+          releaseErrors.push(`audio/manifest.json was not synthesized with the selected voice package "${voice.id}" (current sha256); re-synthesize with --voice-package ${voice.id}`)
         }
       }
     } else if (Array.isArray(audio.chunks) && audio.chunks.length > 0) {

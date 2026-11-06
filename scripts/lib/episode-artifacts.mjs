@@ -1,4 +1,4 @@
-import { existsSync, statSync } from 'node:fs'
+import { existsSync, readFileSync, statSync } from 'node:fs'
 import path from 'node:path'
 import { readProductionMode } from './narration-model.mjs'
 
@@ -12,6 +12,24 @@ export function resolveProductionMode(root, override) {
       ? { conflict: `production mode override ${override} conflicts with persisted mode ${persisted.mode}` }
       : {}),
   }
+}
+
+function readJson(file, label) {
+  try {
+    return JSON.parse(readFileSync(file, 'utf8'))
+  } catch (error) {
+    throw new Error(`${label} is not readable JSON: ${error.message}`)
+  }
+}
+
+/** Episode layout is `<dataRoot>/projects/<slug>/episodes/<episode>`; project.json is optional. */
+export function episodeContext(episodeRoot) {
+  const projectDir = path.resolve(episodeRoot, '..', '..')
+  const dataRoot = path.resolve(projectDir, '..', '..')
+  const production = readJson(path.join(episodeRoot, 'production.json'), 'production.json')
+  const projectFile = path.join(projectDir, 'project.json')
+  const project = existsSync(projectFile) ? readJson(projectFile, 'project.json') : {}
+  return { dataRoot, projectDir, production, project }
 }
 
 const DEFAULT_MASTERS = ['exports/master.mp4', 'exports/master.mov', 'exports/master.webm']

@@ -17,6 +17,12 @@
  *        [--model <checkpoint-dir|repo>] [--ref-text <reference transcript>]
  *        [--sample-text <text>|--sample-file <txt>] [--synthesize-sample] [--out <dir>]
  *        [--require-gpu] [--device-probe-command <cmd>] [--timeout-ms <n>] [--retries <n>] [--json]
+ *   node scripts/audio-preflight.mjs --voice-package <id> [--data-root <dir>] [--provider-command <path>]
+ *        [--model <checkpoint-dir|repo>] --synthesize-sample [--require-gpu] [--json]
+ *
+ * A voice package (library/voices/<id>) supplies provider, provider voice, reference
+ * recording, transcript and language; combining it with --voice-reference/--ref-text
+ * or a different --provider is rejected.
  *
  * Exit: 0 ready for batch, 1 not ready/unverified, 2 usage.
  */
@@ -25,6 +31,8 @@ import os from 'node:os'
 import path from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { probeCommand, runBounded } from './lib/bounded.mjs'
+import { applyVoicePackage, loadVoicePackage } from './lib/voice.mjs'
+import { resolveDataRoot } from './studio-paths.mjs'
 
 export const PROVIDER_DEFINITIONS = {
   'espeak-ng': {
@@ -134,6 +142,26 @@ function analyzeAudioFile(file, deps) {
   return { ok: true, metadata, loudness }
 }
 
+/** Suitability of a voice reference recording: readable audio, 1–120 s, not clipped, not mostly silence. */
+export function inspectVoiceReference(file, deps = {}) {
+  const analysis = analyzeAudioFile(file, deps)
+  const loudnessVerified = analysis.loudness?.ok === true && Number.isFinite(analysis.loudness.maxVolume)
+  const pass = analysis.ok
+    && loudnessVerified
+    && Number.isFinite(analysis.metadata.durationSec)
+    && analysis.metadata.durationSec >= 1
+    && analysis.metadata.durationSec <= 120
+    && analysis.loudness.maxVolume <= -0.1
+    && !(analysis.loudness.silences ?? []).some((duration) => duration >= Math.max(1, (analysis.metadata.durationSec ?? 0) * 0.5))
+  return {
+    path: file,
+    status: pass ? 'PASS' : 'FAIL',
+    metadata: analysis.metadata,
+    loudness: analysis.loudness,
+    error: pass ? undefined : analysis.error ?? 'voice reference is too short/long, silent or clipped',
+  }
+}
+
 function resolveSampleText(options) {
   if (typeof options.sampleText === 'string' && options.sampleText.trim().length > 0) return options.sampleText.trim()
   if (typeof options.sampleFile === 'string' && options.sampleFile.length > 0) {
@@ -162,6 +190,12 @@ function sandboxGpuHidden() {
  * @param {object} [deps]
  */
 export function runAudioPreflight(options = {}, deps = {}) {
+  let voicePackage = null
+  if (options.voicePackage !== undefined) {
+    const pkg = loadVoicePackage(options.voicePackage, path.resolve(options.dataRoot ?? resolveDataRoot().dataRoot))
+    options = applyVoicePackage(options, pkg)
+    voicePackage = { id: pkg.id, sha256: pkg.sha256 }
+  }
   const providerId = options.provider
   const errors = []
   const warnings = []
@@ -229,24 +263,10 @@ export function runAudioPreflight(options = {}, deps = {}) {
 
   let voiceReference
   if (typeof options.voiceReference === 'string' && options.voiceReference.length > 0) {
-    const analysis = analyzeAudioFile(options.voiceReference, deps)
-    const loudnessVerified = analysis.loudness?.ok === true && Number.isFinite(analysis.loudness.maxVolume)
-    const pass = analysis.ok
-      && loudnessVerified
-      && Number.isFinite(analysis.metadata.durationSec)
-      && analysis.metadata.durationSec >= 1
-      && analysis.metadata.durationSec <= 120
-      && analysis.loudness.maxVolume <= -0.1
-      && !(analysis.loudness.silences ?? []).some((duration) => duration >= Math.max(1, (analysis.metadata.durationSec ?? 0) * 0.5))
-    voiceReference = {
-      path: options.voiceReference,
-      status: pass ? 'PASS' : 'FAIL',
-      metadata: analysis.metadata,
-      loudness: analysis.loudness,
-      error: analysis.error,
-    }
-    checks.push({ id: 'voice-reference.suitability', status: pass ? 'PASS' : 'FAIL', detail: pass ? 'duration, format, silence and clipping are within bounds' : analysis.error ?? 'voice reference is too short/long, silent or clipped' })
-    if (!pass) errors.push(`voice reference is not suitable: ${analysis.error ?? 'duration/silence/clipping check failed'}`)
+    voiceReference = inspectVoiceReference(options.voiceReference, deps)
+    const pass = voiceReference.status === 'PASS'
+    checks.push({ id: 'voice-reference.suitability', status: voiceReference.status, detail: pass ? 'duration, format, silence and clipping are within bounds' : voiceReference.error })
+    if (!pass) errors.push(`voice reference is not suitable: ${voiceReference.error}`)
   } else {
     warnings.push('no voice reference supplied; speaker similarity and timbre cannot be checked')
   }
@@ -309,6 +329,7 @@ export function runAudioPreflight(options = {}, deps = {}) {
     model: options.model ?? null,
     refText: options.refText ?? null,
     voiceReference: voiceReference ?? null,
+    voicePackage,
     sample,
     checks,
     status,
@@ -335,6 +356,8 @@ function parseArgs(argv) {
     else if (value === '--provider') args.provider = take()
     else if (value === '--provider-command') args.providerCommand = take()
     else if (value === '--language') args.language = take()
+    else if (value === '--voice-package') args.voicePackage = take()
+    else if (value === '--data-root') args.dataRoot = take()
     else if (value === '--voice') args.voice = take()
     else if (value === '--voice-reference') args.voiceReference = take()
     else if (value === '--model') args.model = take()
@@ -358,7 +381,7 @@ function main() {
   try {
     args = parseArgs(process.argv.slice(2))
   } catch (error) {
-    console.error(`Usage: node scripts/audio-preflight.mjs --provider <id> [--voice <id>] [--voice-reference <wav>] [--synthesize-sample] [--require-gpu] [--json]\n${error.message}`)
+    console.error(`Usage: node scripts/audio-preflight.mjs (--provider <id> [--voice <id>] [--voice-reference <wav> --ref-text <text>] | --voice-package <id> [--data-root <dir>]) [--model <checkpoint>] [--synthesize-sample] [--require-gpu] [--json]\n${error.message}`)
     process.exitCode = 2
     return
   }

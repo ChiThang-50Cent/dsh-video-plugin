@@ -208,3 +208,28 @@ test('version probe failures and mismatched worker versions fail clearly', async
   process.env.FAKE_TTS_REPORTED_VERSION = 'different'
   await assert.rejects(synthesize({ ...options, retries: 0 }), /helper version differs from probed version/)
 })
+
+test('the episode voice package supplies the speaker, is recorded, and switching it re-synthesizes', async (t) => {
+  const { episode, options, calls, manifest } = setup(t)
+  const { voiceReference: _ref, refText: _text, ...packaged } = options
+  const dataRoot = path.join(path.dirname(episode), 'data')
+  const makeVoice = (id, bytes) => {
+    const dir = path.join(dataRoot, 'library', 'voices', id)
+    fs.mkdirSync(dir, { recursive: true })
+    fs.writeFileSync(path.join(dir, 'reference.wav'), bytes)
+    fs.writeFileSync(path.join(dir, 'voice.json'), JSON.stringify({ schemaVersion: 1, id, provider: 'omnivoice', language: 'vi', reference: { file: 'reference.wav', text: `Giọng ${id}.` }, rights: 'test' }))
+  }
+  makeVoice('alto', 'RIFF-alto')
+  makeVoice('bass', 'RIFF-bass')
+  await assert.rejects(synthesize({ ...packaged, dataRoot }), /no voice selected/)
+  fs.writeFileSync(path.join(episode, 'production.json'), JSON.stringify({ schemaVersion: 1, mode: 'narrated', voicePackage: 'alto' }))
+  const first = await synthesize({ ...packaged, dataRoot })
+  assert.deepEqual([first.voicePackage, first.synthesized], ['alto', 3])
+  assert.equal(manifest().engine.voicePackage.id, 'alto')
+  assert.equal(manifest().engine.referenceText, 'Giọng alto.')
+  assert.equal((await synthesize({ ...packaged, dataRoot })).reused, 3)
+  const switched = await synthesize({ ...packaged, dataRoot, voicePackage: 'bass' })
+  assert.deepEqual([switched.voicePackage, switched.synthesized], ['bass', 3])
+  assert.equal(calls().filter((line) => line === 'spawn').length, 2)
+  await assert.rejects(synthesize({ ...options, dataRoot, voicePackage: 'bass' }), /either a voice package/)
+})

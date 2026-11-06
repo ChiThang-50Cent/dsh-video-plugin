@@ -160,7 +160,7 @@ export const rootResolution = resolved
 /** Effective paths for this process. */
 export const paths = resolveStudioPaths(dataRoot)
 
-const LIBRARY_DIRS = ['scenes', 'templates', 'styles', 'visual-styles']
+const LIBRARY_DIRS = ['scenes', 'templates', 'styles', 'visual-styles', 'voices']
 
 function copyMissing(source, destination) {
   if (!fs.existsSync(source)) return []
