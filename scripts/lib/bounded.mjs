@@ -12,6 +12,34 @@ import path from 'node:path'
 
 export const DEFAULT_TIMEOUT_MS = 120_000
 export const MAX_TIMEOUT_MS = 30 * 60_000
+const GRACE_MS = 200
+const SUPERVISOR_MARGIN_MS = 1000
+const supervisor = `
+const { spawn } = require('node:child_process')
+const spec = JSON.parse(process.argv[1])
+let stdout = '', stderr = '', timedOut = false, errorCode
+const child = spawn(spec.command, spec.args, { cwd: spec.cwd, env: spec.env, detached: process.platform !== 'win32', windowsHide: true })
+const kill = (signal) => { try { process.kill(process.platform === 'win32' ? child.pid : -child.pid, signal) } catch {} }
+child.stdout.setEncoding('utf8'); child.stderr.setEncoding('utf8')
+child.stdout.on('data', data => { stdout += data; if (stdout.length > spec.maxBuffer) { errorCode = 'ENOBUFS'; kill('SIGKILL') } })
+child.stderr.on('data', data => { stderr += data; if (stderr.length > spec.maxBuffer) { errorCode = 'ENOBUFS'; kill('SIGKILL') } })
+child.on('error', error => { errorCode = error.code })
+child.stdin.on('error', () => {})
+if (spec.input !== undefined) child.stdin.end(spec.input); else child.stdin.end()
+let status = null, signal = null, closed = false, graceDone = false, finished = false
+const finish = () => {
+  if (finished || !(closed && !timedOut) && !(timedOut && graceDone)) return
+  finished = true
+  if (timedOut) { child.stdin.destroy(); child.stdout.destroy(); child.stderr.destroy() }
+  process.stdout.write(JSON.stringify({ status, signal, timedOut, errorCode, stdout, stderr }), () => process.exit(0))
+}
+const timer = setTimeout(() => {
+  timedOut = true
+  kill('SIGTERM')
+  setTimeout(() => { kill('SIGKILL'); graceDone = true; finish() }, spec.grace)
+}, spec.timeout)
+child.on('close', (code, sig) => { status = code; signal = sig; closed = true; if (!timedOut) clearTimeout(timer); finish() })
+`
 
 /**
  * Find an executable on PATH without invoking a shell.
@@ -80,21 +108,28 @@ export function runBounded(command, args = [], options = {}) {
   }
   const retries = options.retries ?? 0
   if (!Number.isInteger(retries) || retries < 0 || retries > 10) throw new Error('retries must be an integer 0..10')
-  const retryOn = options.retryOn ?? ((result) => result.timedOut || result.errorCode !== undefined || result.signal !== null)
+  const retryOn = options.retryOn ?? ((result) => !result.timedOut && (result.errorCode !== undefined || result.signal !== null))
   const attempts = []
   let last
   for (let attempt = 1; attempt <= retries + 1; attempt += 1) {
     const started = Date.now()
-    const result = spawnSync(command, args, {
-      encoding: 'utf8',
-      timeout: timeoutMs,
-      cwd: options.cwd,
-      env: options.env,
-      input: options.input,
-      maxBuffer: options.maxBuffer ?? 10 * 1024 * 1024,
-      windowsHide: true,
+    const result = spawnSync(process.execPath, ['-e', supervisor, JSON.stringify({
+      command, args, cwd: options.cwd, env: options.env, input: options.input,
+      maxBuffer: options.maxBuffer ?? 10 * 1024 * 1024, timeout: timeoutMs, grace: GRACE_MS,
+    })], {
+      encoding: 'utf8', maxBuffer: (options.maxBuffer ?? 10 * 1024 * 1024) * 3, windowsHide: true,
+      timeout: timeoutMs + GRACE_MS + SUPERVISOR_MARGIN_MS, killSignal: 'SIGKILL',
     })
-    const classified = classify(result)
+    let classified
+    if (result.status === 0) {
+      try {
+        classified = JSON.parse(result.stdout)
+        if (classified === null || typeof classified !== 'object') throw new Error('invalid supervisor result')
+      } catch {
+        classified = { ...classify(result), errorCode: 'ERR_SUPERVISOR_OUTPUT' }
+      }
+    } else classified = classify(result)
+    classified.ok = classified.status === 0 && !classified.timedOut && classified.errorCode === undefined && classified.signal === null
     const record = {
       attempt,
       durationMs: Date.now() - started,

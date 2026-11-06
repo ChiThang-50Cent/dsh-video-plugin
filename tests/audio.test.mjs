@@ -5,6 +5,8 @@ import os from 'node:os'
 import path from 'node:path'
 import { runAudioPreflight } from '../scripts/audio-preflight.mjs'
 import { auditSegmentText, qaAudioEpisode } from '../scripts/qa-audio.mjs'
+import { spawnSync } from 'node:child_process'
+import { runBounded } from '../scripts/lib/bounded.mjs'
 
 function temp(t) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'video-studio-audio-'))
@@ -123,4 +125,53 @@ test('audio QA measures silence and clipping when audio files exist', (t) => {
   })
   assert.equal(result.data.audio.length, 1)
   assert.match(result.errors.join('\n'), /mostly silence|clipped/)
+})
+
+test('GPU probes require affirmative identity and Piper voice is not a reference recording', () => {
+  const probe = deps({ probeCommand: () => ({ available: true, summary: 'CPU backend', resolved: 'probe' }) })
+  assert.equal(runAudioPreflight({ provider: 'piper', voice: 'model.onnx', requireGpu: true, deviceProbeCommand: 'probe' }, probe).device.verified, false)
+  const piper = runAudioPreflight({ provider: 'piper', voice: 'model.onnx' }, probe)
+  assert.equal(piper.errors.some((error) => /voice/.test(error)), false)
+})
+
+test('audio CLI rejects segments without audio', (t) => {
+  const dir = temp(t)
+  fs.mkdirSync(path.join(dir, 'audio'))
+  fs.writeFileSync(path.join(dir, 'audio', 'segments.json'), JSON.stringify({ segments: [{ id: 'seg-001', text: 'Hello.' }] }))
+  const result = spawnSync(process.execPath, [path.resolve('scripts/qa-audio.mjs'), dir, '--audio', '--json'], { encoding: 'utf8' })
+  assert.notEqual(result.status, 0)
+})
+
+test('bounded timeout kills a signal-ignoring process tree without retry', (t) => {
+  const dir = temp(t)
+  const pidFile = path.join(dir, 'child.pid')
+  const childCode = "process.on('SIGTERM',()=>{});setInterval(()=>{},1000)"
+  const parentCode = `const {spawn}=require('node:child_process');const fs=require('node:fs');process.on('SIGTERM',()=>{});const c=spawn(process.execPath,['-e',${JSON.stringify(childCode)}],{stdio:'ignore'});fs.writeFileSync(${JSON.stringify(pidFile)},String(c.pid));setInterval(()=>{},1000)`
+  const start = Date.now()
+  const result = runBounded(process.execPath, ['-e', parentCode], { timeoutMs: 500, retries: 1 })
+  assert.equal(result.timedOut, true)
+  assert.equal(result.attempts.length, 1)
+  assert.ok(Date.now() - start < 1100)
+  const pid = Number(fs.readFileSync(pidFile, 'utf8'))
+  const status = fs.existsSync(`/proc/${pid}/stat`) ? fs.readFileSync(`/proc/${pid}/stat`, 'utf8').split(' ')[2] : null
+  assert.ok(status === null || status === 'Z', `child remains running: ${status}`)
+})
+
+test('bounded timeout returns when an escaped descendant keeps output pipes open', (t) => {
+  if (process.platform === 'win32') return t.skip('POSIX detached process groups required')
+  const dir = temp(t)
+  const pidFile = path.join(dir, 'escaped.pid')
+  let escapedPid
+  t.after(() => {
+    if (escapedPid !== undefined) {
+      try { process.kill(escapedPid, 'SIGKILL') } catch {}
+    }
+  })
+  const code = `const {spawn}=require('node:child_process');const fs=require('node:fs');const child=spawn(process.execPath,['-e','setInterval(()=>{},1000)'],{detached:true,stdio:'inherit'});fs.writeFileSync(${JSON.stringify(pidFile)},String(child.pid));setInterval(()=>{},1000)`
+  const start = Date.now()
+  const result = runBounded(process.execPath, ['-e', code], { timeoutMs: 400 })
+  if (fs.existsSync(pidFile)) escapedPid = Number(fs.readFileSync(pidFile, 'utf8'))
+  assert.equal(result.timedOut, true)
+  assert.ok(Date.now() - start < 1700)
+  assert.ok(fs.existsSync(pidFile))
 })

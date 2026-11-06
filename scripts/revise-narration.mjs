@@ -17,6 +17,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { NARRATED_MODES, isPlainObject, readProductionMode, sha256File, sha256Text } from './lib/narration-model.mjs'
+import { findMaster } from './lib/episode-artifacts.mjs'
 
 function parseArgs(argv) {
   const args = { episode: undefined, from: undefined, reason: undefined, allowReleased: false, json: false }
@@ -91,8 +92,9 @@ export function reviseNarration(options) {
   const newSha = sha256Text(newRaw.toString('utf8'))
   if (oldSha === newSha) throw new Error('replacement narration is byte-identical; no revision was made')
 
-  const masterCandidates = [path.join(root, 'exports', 'master.mp4'), path.join(root, 'exports', 'master.webm')]
-  const released = masterCandidates.find((file) => fs.existsSync(file))
+  const production = fs.existsSync(path.join(root, 'production.json')) ? readJson(path.join(root, 'production.json')) : {}
+  const timeline = fs.existsSync(path.join(root, 'timeline.json')) ? readJson(path.join(root, 'timeline.json')) : {}
+  const released = findMaster(root, production, timeline)?.path
   if (released !== undefined && options.allowReleased !== true) {
     throw new Error(`a released master exists (${path.relative(root, released)}); pass --allow-released and version the master before changing the approved narration`)
   }
@@ -129,6 +131,7 @@ export function reviseNarration(options) {
   }
   if (released !== undefined) {
     const marker = path.join(root, 'exports', 'master.stale.json')
+    fs.mkdirSync(path.dirname(marker), { recursive: true })
     writeJson(marker, {
       stale: true,
       reason: 'narration revised intentionally; the existing master was built from the previous approved script',
@@ -212,7 +215,7 @@ function main() {
     return
   }
   try {
-    const result = reviseNarration(args)
+    const result = reviseNarration({ ...args, episodeDir: args.episode })
     if (args.json) console.log(JSON.stringify(result, null, 2))
     else {
       console.log(`Revised narration: revision ${result.revision}`)

@@ -70,7 +70,7 @@ video-studio/                  # code root (may be read-only if installed)
   .cache/
 ```
 
-`init-workspace.mjs` creates the data tree and overlays missing built-in styles/catalog; it never overwrites. The same resolver drives the plugin and all CLIs, with explicit > env > config file > package precedence. A separate data root is supported from any working directory.
+`init-workspace.mjs` creates the data tree and overlays missing built-in styles/catalog; it never overwrites. The shared resolver uses explicit > env > config file > nearest initialized workspace ancestor or cwd. Relative explicit and env overrides resolve against cwd; config values resolve against the config file directory.
 
 ## 5. Ownership and promotion
 

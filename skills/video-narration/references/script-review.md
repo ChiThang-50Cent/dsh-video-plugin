@@ -180,7 +180,7 @@ Minimum contract; extra fields are allowed:
   "independentReview": {
     "required": true,
     "status": "pass",
-    "reviewer": { "kind": "independent", "id": "editor-2", "method": "fresh-context" },
+    "reviewer": { "kind": "independent", "id": "editor-3", "method": "fresh-context", "readFullScript": true },
     "reviewedAt": "2026-11-05T01:00:00.000Z",
     "narrationSha256": "<same hash>",
     "summary": "Read the full script and brief; checked the limit claim and the identity bridge.",

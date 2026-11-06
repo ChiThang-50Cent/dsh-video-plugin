@@ -131,7 +131,7 @@ export function qaAudioEpisode(episodeDir, options = {}, deps = {}) {
       const label = `segment ${segment?.id ?? `#${index + 1}`}`
       const relative = segment?.audio
       if (typeof relative !== 'string' || relative.length === 0) {
-        warnings.push(`${label} has no audio path; Phase 2 skipped`)
+        errors.push(`${label} has no audio path; Phase 2 cannot verify it`)
         continue
       }
       const file = path.resolve(root, relative)

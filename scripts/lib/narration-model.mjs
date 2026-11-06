@@ -36,6 +36,9 @@ export const SEVERITIES = ['block', 'needs-work', 'note']
 export const FINDING_STATUSES = ['open', 'resolved', 'escalated', 'withdrawn', 'accepted']
 export const REVIEW_STATUSES = ['pass', 'needs-work', 'blocked', 'stale']
 export const CLAIM_RISKS = ['low', 'medium', 'high', 'critical']
+export function claimRisk(claim) {
+  return lower(claim?.risk ?? claim?.severity)
+}
 export const MODES = ['narrated', 'silent', 'text-only', 'mixed']
 export const NARRATED_MODES = new Set(['narrated', 'mixed'])
 

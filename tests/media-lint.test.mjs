@@ -62,3 +62,17 @@ test('narration lint flags filler, visual deixis, raw LaTeX and the algebra anti
   const algebraLint = lintParsed(algebra, { centralQuestion: 'Đại số là gì?' })
   assert.ok(algebraLint.heuristic.some((item) => item.code === 'opening.meta-greeting'))
 })
+
+test('unavailable media scans cannot pass quality or strict audio QA', (t) => {
+  const dir = temp(t)
+  const video = path.join(dir, 'tiny.mp4')
+  assert.equal(spawnSync('ffmpeg', ['-v', 'error', '-f', 'lavfi', '-i', 'color=s=64x64:d=1', '-c:v', 'mpeg4', '-y', video]).status, 0)
+  const ffprobe = spawnSync('which', ['ffprobe'], { encoding: 'utf8' }).stdout.trim()
+  fs.symlinkSync(ffprobe, path.join(dir, 'ffprobe'))
+  const run = spawnSync(process.execPath, [path.resolve('scripts/qa-media.mjs'), video, '--allow-no-audio', '--quality', '--strict-audio', '--json'], {
+    encoding: 'utf8', env: { ...process.env, PATH: dir },
+  })
+  assert.notEqual(run.status, 0)
+  const report = JSON.parse(run.stdout)
+  assert.equal(report.checks.quality.status, 'UNAVAILABLE')
+})

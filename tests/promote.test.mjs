@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
+import { spawn } from 'node:child_process'
 import { promoteScene } from '../scripts/promote-scene.mjs'
 
 function setup(t) {
@@ -13,7 +14,7 @@ function setup(t) {
   fs.mkdirSync(path.join(episode, 'qa'), { recursive: true })
   fs.writeFileSync(path.join(episode, 'scenes', 's01.mjs'), 'export function render() { return "ok" }\n')
   fs.writeFileSync(path.join(episode, 'preview.png'), 'PNGDATA')
-  const qa = { status: 'PASS', sceneId: 'intro-template', checks: ['bounds', 'duration'], backend: 'browser', backendVersion: '1.0' }
+  const qa = { status: 'PASS', sceneId: 's01', checks: ['bounds', 'duration'], backend: 'browser', backendVersion: '1.0' }
   fs.writeFileSync(path.join(episode, 'qa', 's01.json'), JSON.stringify(qa))
   return { root, episode, files: { scene: path.join(episode, 'scenes', 's01.mjs'), preview: path.join(episode, 'preview.png'), qa: path.join(episode, 'qa', 's01.json') } }
 }
@@ -29,6 +30,7 @@ test('the first scene promotes successfully into an empty library', (t) => {
   assert.equal(catalog.entries.length, 1)
   const entry = catalog.entries[0]
   assert.equal(entry.id, 'intro-template')
+  assert.equal(entry.sourceSceneId, 's01')
   assert.equal(entry.templateVersion, 2)
   assert.equal(entry.backend, 'browser')
   assert.equal(entry.qaStatus, 'PASS')
@@ -77,4 +79,42 @@ test('inputs outside projects or with the wrong shape are rejected', (t) => {
   assert.match(result.errors.join('\n'), /inside .*projects/)
   const catalog = JSON.parse(fs.readFileSync(path.join(root, 'library', 'catalog.json'), 'utf8'))
   assert.equal(catalog.entries.length, 0)
+})
+
+test('promotion checks source identity and accepts Blender Python scenes', (t) => {
+  const { root, episode, files } = setup(t)
+  const scene = path.join(episode, 'scenes', 's01.py')
+  fs.writeFileSync(scene, 'print("render")')
+  const result = promoteScene({ id: 'blender-example', scene, preview: files.preview, qa: files.qa, dataRoot: root })
+  assert.equal(result.ok, true, result.errors.join('\n'))
+  assert.equal(result.entry.sourceSceneId, 's01')
+  fs.writeFileSync(files.qa, JSON.stringify({ status: 'PASS', sceneId: 'another' }))
+  assert.equal(promoteScene({ id: 'wrong-scene', scene, preview: files.preview, qa: files.qa, dataRoot: root }).ok, false)
+})
+
+test('concurrent CLI promotions retain both catalog entries', async (t) => {
+  const { root, files } = setup(t)
+  const cli = path.resolve('scripts/promote-scene.mjs')
+  const run = (id) => new Promise((resolve, reject) => {
+    const child = spawn(process.execPath, [cli, id, files.scene, files.preview, files.qa, '--data-root', root])
+    let output = ''
+    child.stdout.on('data', (chunk) => { output += chunk })
+    child.stderr.on('data', (chunk) => { output += chunk })
+    child.on('error', reject)
+    child.on('close', (status) => resolve({ status, output }))
+  })
+  const results = await Promise.all([run('example-one'), run('example-two')])
+  for (const result of results) assert.equal(result.status, 0, result.output)
+  const catalog = JSON.parse(fs.readFileSync(path.join(root, 'library', 'catalog.json'), 'utf8'))
+  assert.deepEqual(catalog.entries.map((entry) => entry.id).sort(), ['example-one', 'example-two'])
+})
+
+test('promotion recovers a lock owned by a dead local process', (t) => {
+  const { root, files } = setup(t)
+  const library = path.join(root, 'library')
+  fs.mkdirSync(library, { recursive: true })
+  fs.writeFileSync(path.join(library, '.catalog.lock'), JSON.stringify({ pid: 2147483647, host: os.hostname(), createdAt: new Date(0).toISOString() }))
+  const result = promoteScene({ id: 'recovered-example', scene: files.scene, preview: files.preview, qa: files.qa, dataRoot: root })
+  assert.equal(result.ok, true, result.errors.join('\n'))
+  assert.equal(fs.existsSync(path.join(library, '.catalog.lock')), false)
 })

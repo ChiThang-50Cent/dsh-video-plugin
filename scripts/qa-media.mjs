@@ -215,14 +215,14 @@ export function qaMedia(video, options = {}) {
   const metadata = probeMetadata(video, options)
   const errors = [...metadata.errors]
   const warnings = []
-  const quality = { checked: options.quality === true || options.duplicates === true || options.subtitles !== undefined, checks: [], warnings: [] }
-  if (options.quality === true || options.duplicates === true) {
+  const quality = { checked: options.quality === true || options.strictAudio === true || options.duplicates === true || options.subtitles !== undefined, checks: [], warnings: [] }
+  if (options.quality === true || options.strictAudio === true || options.duplicates === true) {
     const result = qualityChecks(video, metadata)
     quality.checks.push(...result.checks)
     quality.warnings.push(...result.warnings)
     if (!result.ok) errors.push('audio clipping detected')
-    if (options.strictAudio === true && result.checks.some((check) => /^audio\./.test(check.id) && check.status === 'WARN')) {
-      errors.push('strict audio QA: a targeted audio check reported a warning')
+    if (options.strictAudio === true && result.checks.some((check) => /^audio\./.test(check.id) && ['WARN', 'UNAVAILABLE'].includes(check.status))) {
+      errors.push('strict audio QA: a targeted audio check warned or was unavailable')
     }
   }
   if (options.duplicates === true) quality.checks.push({ id: 'video.duplicate-frames', ...duplicateCheck(video) })
@@ -230,6 +230,7 @@ export function qaMedia(video, options = {}) {
     if (!fs.existsSync(options.subtitles)) errors.push(`subtitle file not found: ${options.subtitles}`)
     else {
       const parsed = parseSrt(fs.readFileSync(options.subtitles, 'utf8'), metadata.durationSec)
+      quality.checks.push({ id: 'subtitles.structure', status: parsed.ok ? (parsed.warnings.length > 0 ? 'WARN' : 'PASS') : 'FAIL' })
       quality.subtitles = { ...parsed, cues: parsed.cues.length }
       errors.push(...parsed.errors)
       quality.warnings.push(...parsed.warnings)
@@ -237,7 +238,7 @@ export function qaMedia(video, options = {}) {
   }
   return {
     ok: errors.length === 0,
-    mode: options.quality === true || options.duplicates === true || options.subtitles !== undefined ? 'metadata+quality' : 'metadata',
+    mode: quality.checked ? 'metadata+quality' : 'metadata',
     durationSec: metadata.durationSec,
     sizeBytes: metadata.sizeBytes,
     sha256: sha256FileStream(video),
@@ -248,8 +249,8 @@ export function qaMedia(video, options = {}) {
     quality,
     checks: {
       metadata: { status: metadata.ok ? 'PASS' : 'FAIL', errors: metadata.errors },
-      quality: options.quality === true || options.duplicates === true || options.subtitles !== undefined
-        ? { status: quality.checks.some((check) => check.status === 'FAIL') ? 'FAIL' : 'PASS', checks: quality.checks, warnings: quality.warnings }
+      quality: quality.checked
+        ? { status: quality.checks.some((check) => check.status === 'FAIL') ? 'FAIL' : quality.checks.length === 0 || quality.checks.every((check) => check.status === 'UNAVAILABLE') ? 'UNAVAILABLE' : quality.checks.some((check) => check.status === 'UNAVAILABLE') ? 'INCOMPLETE' : quality.checks.some((check) => check.status === 'WARN') ? 'WARN' : 'PASS', checks: quality.checks, warnings: quality.warnings }
         : { status: 'NOT_RUN', note: 'metadata only; pass --quality/--subtitles for targeted media checks' },
     },
     errors,

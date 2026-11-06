@@ -6,7 +6,7 @@ The 0.5 line makes narration quality a real evidence-based gate, adds a meaning-
 
 ## Contents
 
-- `package.json`, `index.js`, `cordis.patch.yml`, `skills/`, `locale/`, `icon.svg`: DSH bundle payload. The Studio plugin registers the nine skills with `ctx.skills.register` for every session in the profile and prepends the resolved studio roots.
+- `package.json`, `index.js`, `cordis.patch.yml`, `skills/`, `locale/`, `icon.svg`: DSH bundle payload. The Studio plugin registers a provider for nine skills profile-wide and renders roots for each session workspace.
 - `AGENTS.md`: standing rules for the studio.
 - `skills/`: nine DSH skills. `video-narration/references/` carries the Vietnamese style guide, annotated examples and the full G0 review/claim/review schemas.
 - `kit/`: example contracts: project, production mode, through-line map, claim check, narration review, segments, scene contract/result, worker plan.
@@ -39,15 +39,15 @@ Every loaded skill begins with:
 > Standing rules: `/path/to/video-studio/AGENTS.md` ...
 ```
 
-Resolve `projects/`, `library/`, `scripts/` and `.cache/` against these roots. **Code root** is the installed package (skills, scripts, kit, built-in library payload); **data root** is user production data. The data root defaults to the package and can be moved:
+Resolve `scripts/` against the **code root**, the installed package (skills, scripts, kit, built-in library payload). Resolve `projects/`, `library/` and `.cache/` against the **data root**. By default this is the nearest ancestor of the current directory containing `library/catalog.json`, or the current directory if no initialized workspace exists. From the workspace, initialize it with:
 
 ```bash
-VIDEO_STUDIO_ROOT=/data/video node scripts/init-workspace.mjs
-# or
-node scripts/init-workspace.mjs --data-root /data/video
+node /path/to/video-studio/scripts/init-workspace.mjs
+# To select another data root:
+node /path/to/video-studio/scripts/init-workspace.mjs --data-root /data/video
 ```
 
-Precedence is explicit `--data-root`/plugin `dataRoot` > `VIDEO_STUDIO_ROOT` > `studio.config.json` > package root. The plugin and every CLI helper use the same resolver. If `dataRoot` is set only in the plugin row, export the same value for shell helpers or pass `--data-root`; a profile row is not visible to a CLI process. `scripts/studio-root.mjs` prints effective roots. Initialization is idempotent and copies missing built-in styles/catalog, even when the plugin came from an npm tarball; it never overwrites user files.
+Precedence is explicit `--data-root`/plugin `dataRoot` > `VIDEO_STUDIO_ROOT` > `studio.config.json` > initialized workspace ancestor or cwd. Relative explicit and environment values resolve against cwd; relative config values resolve against the config file directory. The plugin and CLI helpers use the same resolver. If `dataRoot` is set only in the plugin row, export the same value for shell helpers or pass `--data-root`; a profile row is not visible to a CLI process. Run the code root's `scripts/studio-root.mjs` from the workspace to print effective roots. Initialization is idempotent and copies missing built-in styles/catalog; it never overwrites existing user files.
 
 Install the npm payload separately from production data. The package deliberately excludes user-provided transcripts and includes `library/catalog.json`, `library/styles/default.json` and the public style metadata/notes needed to initialize.
 
@@ -115,7 +115,7 @@ Fill the through-line, claims and cited review, rename the three files to their 
 - `narrated`/`mixed`: narration G0 and audio QA required.
 - `silent`/`text-only`: no fake narration, claims or review. Visual/media QA and, where present, music/SFX/subtitles are the gates.
 
-Create with `node scripts/new-episode.mjs <series> <ep-001> --mode silent`. A fresh episode is structurally lint-clean but release status `INCOMPLETE`.
+From the workspace, create an episode with `node /path/to/video-studio/scripts/new-episode.mjs <series> <ep-001> --mode silent`. A fresh episode is structurally lint-clean but release status `INCOMPLETE`.
 
 ## Audio preflight and runtime
 

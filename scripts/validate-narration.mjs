@@ -36,7 +36,7 @@ import {
   validateNarrationIntegrity,
 } from './lib/narration-integrity.mjs'
 import { validateNarrationEditorial } from './lib/narration-editorial.mjs'
-
+import { resolveProductionMode } from './lib/episode-artifacts.mjs'
 export { CRITERIA, extractSpokenProse, sha256File }
 export { loadNarrationEpisode, validateNarrationIntegrity, validateNarrationEditorial }
 
@@ -64,6 +64,7 @@ export function validateNarration(episodeDir, options = {}) {
     throw new Error(`unknown narration gate mode: ${mode}`)
   }
   const context = loadNarrationEpisode(episodeDir)
+  context.mode = resolveProductionMode(context.root, options.productionMode).mode
   const integrity = mode === 'editorial'
     ? undefined
     : validateNarrationIntegrity(context, { segments: options.segments, requireSegments: options.requireSegments })

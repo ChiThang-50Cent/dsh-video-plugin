@@ -2,16 +2,14 @@
  * Portable video studio: register the studio skills for every session in the
  * profile, so they work from any workspace.
  *
- * The skills live in this package, not in the session's project root. Each
- * registered body carries the resolved studio roots, because a session opened
- * in another workspace must not resolve `projects/`, `library/` or `scripts/`
- * against its own working directory.
+ * Skills live in this package; production data defaults to each session's
+ * workspace. Headers are rendered at lookup time for that workspace.
  *
  * `scripts/studio-paths.mjs` owns root resolution for the plugin and every CLI
  * helper. The plugin adds the configurable `dataRoot` row value to that one
  * resolver instead of reimplementing path logic here.
  */
-import { readFile, readdir } from 'node:fs/promises'
+import { readFileSync, readdirSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { resolveDataRoot, resolveStudioPaths } from './scripts/studio-paths.mjs'
@@ -20,6 +18,23 @@ export const name = 'video-studio'
 
 /** Wait for the skill registry before registering the catalog. */
 export const inject = ['skills']
+
+export const Config = {
+  '~standard': {
+    version: 1,
+    vendor: 'portable-video-studio',
+    validate(value) {
+      if (value === undefined) return { value: {} }
+      if (value === null || typeof value !== 'object' || Array.isArray(value)) {
+        return { issues: [{ message: 'config must be an object' }] }
+      }
+      if (value.dataRoot !== undefined && (typeof value.dataRoot !== 'string' || !value.dataRoot.trim())) {
+        return { issues: [{ message: 'dataRoot must be a non-empty string', path: ['dataRoot'] }] }
+      }
+      return { value }
+    },
+  },
+}
 
 const packageRoot = dirname(fileURLToPath(import.meta.url))
 
@@ -34,6 +49,7 @@ export function dataRootOf(configured, options = {}) {
     dataRoot: typeof configured === 'string' ? configured : undefined,
     codeRoot: packageRoot,
     env: options.env ?? process.env,
+    cwd: options.cwd,
   }).dataRoot
 }
 
@@ -74,20 +90,17 @@ export function parseFrontmatter(text) {
  * @returns {string} markdown quote block prepended to every skill body.
  */
 export function studioHeader(dataRoot, root = packageRoot) {
-  const code = resolveStudioPaths(dataRoot, root).codeRoot
-  const same = dataRoot === code
-  const lines = same
-    ? [`Studio root: \`${code}\` (code, projects, library, cache)`]
-    : [
-      `Studio code root: \`${code}\``,
-      `Studio data root: \`${dataRoot}\` (projects, library, cache)`,
-    ]
-  return [
-    ...lines,
+  const code = resolveStudioPaths(dataRoot ?? root, root).codeRoot
+  const lines = [
+    `Studio code root: \`${code}\``,
+    dataRoot === undefined
+      ? 'Studio data root: the session workspace (subject to configured overrides).'
+      : `Studio data root: \`${dataRoot}\` (projects, library, cache)`,
     `Standing rules: \`${join(code, 'AGENTS.md')}\` — read it before the first production action.`,
-    'Resolve every `projects/`, `library/`, `scripts/` and `.cache/` path against these roots, never against the session working directory.',
-    `\`node ${join(code, 'scripts', 'studio-root.mjs')}\` prints the same roots as JSON.`,
-  ].map((line) => `> ${line}`).join('\n')
+    'Resolve `scripts/` against the code root and `projects/`, `library/`, `.cache/` against the data root.',
+    `Run \`node ${join(code, 'scripts', 'studio-root.mjs')}\` from the session workspace to print the effective roots as JSON.`,
+  ]
+  return lines.map((line) => `> ${line}`).join('\n')
 }
 
 /**
@@ -95,28 +108,22 @@ export function studioHeader(dataRoot, root = packageRoot) {
  * @param {import('@deepseek-ai/cordis').Context} ctx - plugin context.
  * @param {{ dataRoot?: string } | undefined} config - row config.
  */
-export async function apply(ctx, config) {
-  const resolution = resolveDataRoot({
-    dataRoot: typeof config?.dataRoot === 'string' ? config.dataRoot : undefined,
-    codeRoot: packageRoot,
-  })
-  const dataRoot = resolution.dataRoot
-  for (const warning of resolution.warnings ?? []) ctx.logger?.warn(`video-studio: ${warning}`)
+export function apply(ctx, config) {
   const skillsDir = join(packageRoot, 'skills')
-  const header = studioHeader(dataRoot, packageRoot)
   let entries
   try {
-    entries = await readdir(skillsDir, { withFileTypes: true })
+    entries = readdirSync(skillsDir, { withFileTypes: true })
   } catch (error) {
     throw new Error(`video-studio: skills directory is unreadable: ${skillsDir}`, { cause: error })
   }
-  let registered = 0
+  const candidates = []
   for (const entry of entries) {
     if (!entry.isDirectory()) continue
-    const file = join(skillsDir, entry.name, 'SKILL.md')
+    const directory = join(skillsDir, entry.name)
+    const file = join(directory, 'SKILL.md')
     let raw
     try {
-      raw = await readFile(file, 'utf8')
+      raw = readFileSync(file, 'utf8')
     } catch (error) {
       ctx.logger?.warn(`video-studio: skipping unreadable skill ${file}`, error)
       continue
@@ -126,16 +133,33 @@ export async function apply(ctx, config) {
       ctx.logger?.warn(`video-studio: skipping skill without name/description: ${file}`)
       continue
     }
-    ctx.skills.register({
+    candidates.push({
       name: meta.name,
       description: meta.description,
       ...(meta.whenToUse === undefined ? {} : { whenToUse: meta.whenToUse }),
-      content: `${header}\n\n${body}`,
       path: file,
-      // The registry defaults invocation and provider, but not the prompt-visible origin.
-      source: 'runtime',
+      source: 'bundled',
+      provider: 'video-studio',
+      invocation: { modelInvocable: true, userInvocable: true },
+      resourceBase: { kind: 'directory', path: directory },
+      // Bundled rank lets workspace skills take precedence over package skills.
+      rank: 600,
+      locator: body,
     })
-    registered += 1
   }
-  if (registered === 0) throw new Error(`video-studio: no skills registered from ${skillsDir}`)
+  if (candidates.length === 0) throw new Error(`video-studio: no skills registered from ${skillsDir}`)
+  ctx.skills.registerProvider(() => ({
+    name: 'video-studio',
+    list: async () => candidates,
+    get: async (candidate, options = {}) => {
+      const resolution = options.cwd === undefined ? undefined : resolveDataRoot({
+        dataRoot: config?.dataRoot,
+        codeRoot: packageRoot,
+        cwd: options.cwd,
+      })
+      for (const warning of resolution?.warnings ?? []) ctx.logger?.warn(`video-studio: ${warning}`)
+      const { rank, locator, ...summary } = candidate
+      return { ...summary, content: `${studioHeader(resolution?.dataRoot)}\n\n${locator}` }
+    },
+  }))
 }

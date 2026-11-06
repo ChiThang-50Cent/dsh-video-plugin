@@ -12,7 +12,7 @@
         "version": 1,
         "overrides": []
       },
-      "audio": "narration/seg-001.wav"
+      "audio": "audio/narration/seg-001.wav"
     }
   ]
 }

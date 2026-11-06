@@ -1,66 +1,81 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import path from 'node:path'
-import { apply, dataRootOf, parseFrontmatter, studioHeader } from '../index.js'
+import fs from 'node:fs'
+import os from 'node:os'
+import { apply, Config, dataRootOf, parseFrontmatter, studioHeader } from '../index.js'
 import { resolveDataRoot } from '../scripts/studio-paths.mjs'
 
 const repoRoot = path.resolve(import.meta.dirname, '..')
 
-function context() {
-  const registered = []
-  return {
-    registered,
-    ctx: {
-      skills: { register: (skill) => { registered.push(skill); return () => {} } },
-      logger: { warn() {} },
-    },
-  }
+function provider(config = {}) {
+  let result
+  apply({ skills: { registerProvider: (create) => { result = create({}) } }, logger: { warn() {} } }, config)
+  return result
 }
 
-test('registers every studio skill with resolved roots', async () => {
-  const { registered, ctx } = context()
-  await apply(ctx, {})
-  assert.equal(registered.length, 9)
-  assert.deepEqual(registered.map((skill) => skill.name).sort(), [
+test('registers a synchronous workspace-sensitive bundled provider with resource bases', async () => {
+  const p = provider()
+  const skills = await p.list({ cwd: '/tmp/wsA' })
+  assert.deepEqual(skills.map((skill) => skill.name).sort(), [
     'video-audio', 'video-intake', 'video-narration', 'video-produce', 'video-qa',
     'video-reuse', 'video-scene-code', 'video-storyboard', 'video-workspace',
   ])
-  for (const skill of registered) {
-    assert.ok(skill.description.length > 20, `${skill.name} needs a routing description`)
-    assert.ok(skill.path.endsWith('SKILL.md'))
-    assert.equal(skill.source, 'runtime')
-    assert.match(skill.content, /Studio (?:code root|root)/)
-    assert.match(skill.content, /AGENTS\.md/)
-    assert.match(skill.content, /never against the session working directory/)
-    assert.doesNotMatch(skill.content, /^> >/m)
+  for (const skill of skills) {
+    assert.ok(skill.description.length > 20)
+    assert.equal(skill.resourceBase.path, path.dirname(skill.path))
+    assert.equal(skill.resourceBase.kind, 'directory')
+    assert.equal(skill.rank, 600)
+    const definition = await p.get(skill, { cwd: '/tmp/wsA', signal: new AbortController().signal })
+    assert.equal(Object.hasOwn(definition, 'rank'), false)
+    assert.equal(Object.hasOwn(definition, 'locator'), false)
+    assert.ok((await p.get(skill, { cwd: '/tmp/wsA' })).content.includes('Studio data root: `/tmp/wsA`'))
+    assert.ok((await p.get(skill, { cwd: '/tmp/wsB' })).content.includes('Studio data root: `/tmp/wsB`'))
+    const unknown = (await p.get(skill, {})).content
+    assert.match(unknown, /data root: the session workspace/)
+    assert.ok(unknown.includes(path.join(repoRoot, 'scripts', 'studio-root.mjs')))
   }
 })
 
-test('honours an explicit data root and keeps code/data roots distinct', async () => {
-  const { registered, ctx } = context()
-  await apply(ctx, { dataRoot: '/tmp/studio-data' })
-  assert.match(registered[0].content, /Studio code root: `.*dsh-video-studio`/)
-  assert.match(registered[0].content, /Studio data root: `\/tmp\/studio-data` \(projects, library, cache\)/)
-  assert.equal(dataRootOf('/tmp/studio-data'), '/tmp/studio-data')
-  assert.equal(dataRootOf(undefined, { env: {} }), repoRoot)
+test('explicit roots resolve relative to each workspace', async () => {
+  const p = provider({ dataRoot: 'data' })
+  const skill = (await p.list())[0]
+  const content = (await p.get(skill, { cwd: '/tmp/wsA' })).content
+  assert.ok(content.includes(`Studio code root: \`${repoRoot}\``))
+  assert.ok(content.includes('Studio data root: `/tmp/wsA/data`'))
+  assert.equal(dataRootOf('data', { cwd: '/tmp/wsA', env: {} }), '/tmp/wsA/data')
 })
 
-test('data-root precedence is explicit > env > config > package', () => {
-  const configFile = { dataRoot: '/tmp/config-data', path: '/tmp/studio.config.json' }
-  assert.equal(resolveDataRoot({ dataRoot: 'relative-data', codeRoot: repoRoot, configFile }).dataRoot, path.join(repoRoot, 'relative-data'))
-  assert.equal(resolveDataRoot({ codeRoot: repoRoot, cwd: '/tmp', env: { VIDEO_STUDIO_ROOT: 'env-data' }, configFile }).dataRoot, '/tmp/env-data')
-  assert.equal(resolveDataRoot({ codeRoot: repoRoot, env: {}, configFile }).dataRoot, '/tmp/config-data')
-  assert.equal(resolveDataRoot({ codeRoot: repoRoot, env: {}, configFile: {} }).dataRoot, repoRoot)
+test('provider discovers an initialized workspace from an episode cwd', async (t) => {
+  const workspace = fs.mkdtempSync(path.join(os.tmpdir(), 'studio-provider-'))
+  t.after(() => fs.rmSync(workspace, { recursive: true, force: true }))
+  fs.mkdirSync(path.join(workspace, 'library'))
+  fs.writeFileSync(path.join(workspace, 'library', 'catalog.json'), '{"entries":[]}')
+  const episode = path.join(workspace, 'projects', 'series', 'episodes', 'ep-001')
+  fs.mkdirSync(episode, { recursive: true })
+  const p = provider()
+  const skill = (await p.list({ cwd: episode }))[0]
+  assert.ok((await p.get(skill, { cwd: episode })).content.includes(`Studio data root: \`${workspace}\``))
 })
 
-test('the studio header is well formed and never prints undefined', () => {
-  const same = studioHeader(repoRoot, repoRoot)
-  assert.match(same, /^> Studio root: `.*` \(code, projects, library, cache\)$/m)
-  assert.doesNotMatch(same, /undefined|> >/)
-  const split = studioHeader('/tmp/video-data', repoRoot)
-  assert.match(split, /^> Studio code root: `.*`$/m)
-  assert.match(split, /^> Studio data root: `\/tmp\/video-data` \(projects, library, cache\)$/m)
-  assert.doesNotMatch(split, /undefined|> >/)
+test('data-root precedence is explicit > env > config > workspace', () => {
+  const configFile = { dataRoot: 'config-data', path: '/var/studio/studio.config.json' }
+  assert.equal(resolveDataRoot({ dataRoot: 'relative-data', cwd: '/tmp', env: {}, configFile }).dataRoot, '/tmp/relative-data')
+  assert.equal(resolveDataRoot({ cwd: '/tmp', env: { VIDEO_STUDIO_ROOT: 'env-data' }, configFile }).dataRoot, '/tmp/env-data')
+  assert.equal(resolveDataRoot({ cwd: '/tmp', env: {}, configFile }).dataRoot, '/var/studio/config-data')
+  assert.equal(resolveDataRoot({ cwd: '/tmp', env: {}, configFile: {} }).dataRoot, '/tmp')
+})
+
+test('config schema rejects invalid data roots', () => {
+  const validate = Config['~standard'].validate
+  for (const dataRoot of ['', '  ', 5, null]) assert.ok(validate({ dataRoot }).issues)
+  assert.deepEqual(validate({ dataRoot: 'data' }).value, { dataRoot: 'data' })
+})
+
+test('header is well formed and uses computed code root', () => {
+  const header = studioHeader('/tmp/video-data', repoRoot)
+  assert.ok(header.includes(`Studio code root: \`${repoRoot}\``))
+  assert.doesNotMatch(header, /undefined|> >/)
 })
 
 test('parses frontmatter without eating the body', () => {

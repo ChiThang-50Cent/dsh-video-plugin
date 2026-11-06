@@ -16,6 +16,7 @@ import {
   NARRATED_MODES,
   REVIEW_STATUSES,
   SEVERITIES,
+  claimRisk,
   claimSignals,
   containsExcerpt,
   isPlainObject,
@@ -378,7 +379,7 @@ function checkReviewReferences(context, review, claimsById, evidenceByCriterion,
 
 function checkIndependentReview(context, review, claims, errors) {
   const production = context.production ?? {}
-  const highRiskClaims = (claims?.claims ?? []).filter((claim) => ['high', 'critical'].includes(lower(claim?.risk)))
+  const highRiskClaims = (claims?.claims ?? []).filter((claim) => ['high', 'critical'].includes(claimRisk(claim)))
   const declaredRequired = review.independentReview?.required === true
   const required = production.narrationRisk === 'high' || production.qualitySensitive === true
     || highRiskClaims.length > 0 || declaredRequired
@@ -483,7 +484,7 @@ function checkClaims(context, claims, errors, warnings) {
     else byId.set(claim.id, claim)
     if (!isNonEmpty(claim.claim)) errors.push(`${label} has no claim text`)
     else if (isPlaceholder(claim.claim)) errors.push(`${label} claim text is a placeholder`)
-    const risk = lower(claim.risk ?? claim.severity)
+    const risk = claimRisk(claim)
     if (!CLAIM_RISKS.includes(risk)) errors.push(`${label} risk must be one of ${CLAIM_RISKS.join(', ')}`)
     if (typeof claim.verified !== 'boolean') errors.push(`${label} verified must be true or false`)
 

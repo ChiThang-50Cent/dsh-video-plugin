@@ -213,71 +213,92 @@ const OPERATOR_PATTERN = new RegExp(
 )
 const SYMBOL_PATTERN = /(>=|<=|!=|[-+*/=<>^%√∞±×·÷≥≤≠])/gu
 
-function pushNumbersFromDigits(text, numbers) {
-  const pattern = /(?<![\p{L}\d])(-?\d+(?:[.,]\d+)*)(?![\p{L}\d])/gu
-  for (const match of text.matchAll(pattern)) {
-    const raw = match[1]
-    const value = Number(raw.replace(/\./g, '').replace(',', '.'))
-    if (Number.isFinite(value)) numbers.push({ value, raw, source: 'digits' })
-  }
-}
-
-function pushNumbersFromWords(text, numbers) {
-  const matches = [...text.matchAll(NUMBER_WORD_PATTERN)]
-  let run = []
-  let start = -1
-  let end = -1
-  const flush = () => {
-    if (run.length === 0) return
-    const value = parseVietnameseNumber(run.join(' '))
-    if (Number.isFinite(value)) numbers.push({ value, raw: text.slice(start, end), source: 'words' })
-    run = []
-    start = -1
-    end = -1
-  }
-  for (const match of matches) {
-    const index = match.index ?? 0
-    if (run.length > 0) {
-      const gap = text.slice(end, index)
-      if (!/^\s*$/.test(gap)) flush()
-    }
-    if (run.length === 0) start = index
-    run.push(match[0].toLowerCase())
-    end = index + match[0].length
-  }
-  flush()
-}
+const MEASUREMENT_UNITS = [
+  ['ki-lô-mét', 'km'], ['kilômét', 'km'], ['km', 'km'],
+  ['mi-li-mét', 'mm'], ['milimét', 'mm'], ['mm', 'mm'],
+  ['xen-ti-mét', 'cm'], ['centimét', 'cm'], ['cm', 'cm'],
+  ['mét', 'm'], ['m', 'm'],
+  ['ki-lô-gam', 'kg'], ['kilôgam', 'kg'], ['kg', 'kg'],
+  ['gam', 'g'], ['g', 'g'],
+]
 
 /**
- * Canonical semantics: every number value and every operator/sign token.
- * @param {string} text
+ * Ordered mathematical content, including measurement units and signs.
+ * Invalid dot groupings are retained as errors rather than guessed.
  */
 export function semanticFingerprint(text) {
-  const normalized = String(text ?? '')
-    .normalize('NFC')
-    .toLowerCase()
-    .replace(/[*_`]/g, '')
+  const normalized = String(text ?? '').normalize('NFC').toLowerCase()
+    .replace(/(?<![\p{L}\p{N}])\*\*(?=\S)([^*\n]*?\S)\*\*(?![\p{L}\p{N}])/gu, '$1')
+    .replace(/(?<![\p{L}\p{N}])\*(?=\S)([^*\n]*?\S)\*(?![\p{L}\p{N}])/gu, '$1')
+    .replace(/[_`]/g, '')
     .replace(/\^\s*2(?!\d)/g, ' bình phương ')
-    .replace(/\bmũ\s+(?:hai|2)\b/gu, ' bình phương ')
-  const numbers = []
-  const numberSource = normalized.replace(/phần\s+trăm/gu, ' __percent__ ')
-  pushNumbersFromDigits(numberSource, numbers)
-  pushNumbersFromWords(numberSource, numbers)
-  const operators = []
-  for (const match of normalized.matchAll(OPERATOR_PATTERN)) operators.push(OPERATOR_TERMS.find(([term]) => term.toLowerCase() === match[0].toLowerCase())?.[1] ?? match[0])
-  for (const match of normalized.matchAll(SYMBOL_PATTERN)) operators.push(SYMBOL_TERMS.find(([term]) => term === match[0])?.[1] ?? match[0])
-  // Signs attached to a following quantity or infinity are semantic signs.
-  for (const match of normalized.matchAll(/(?<!\p{L})(âm|dương)\s+(?=(?:vô cực|\d|không|một|hai|ba|bốn|tư|năm|lăm|sáu|bảy|tám|chín|mười|mươi))/gu)) {
-    operators.push(match[1] === 'âm' ? 'NEG' : 'POS')
+    .replace(/mũ\s+(?:hai|2)(?![\p{L}\d])/gu, ' bình phương ')
+    .replace(/[−–](?=\s*\d)/gu, '-')
+  const matches = []
+  const errors = []
+  const add = (start, end, token, priority = 0) => matches.push({ start, end, token, priority })
+  for (const match of normalized.matchAll(/(?<![\p{L}\d])\d+(?:[.,]\d+)*/gu)) {
+    const raw = match[0]
+    const [integer, ...decimals] = raw.split(',')
+    if (decimals.length > 1 || integer.split('.').slice(1).some((group) => group.length !== 3) || decimals.some((part) => part.includes('.'))) {
+      errors.push(`ambiguous number token "${raw}"`)
+      continue
+    }
+    add(match.index, match.index + raw.length, `NUM:${Number(integer.replace(/\./g, '') + (decimals.length ? `.${decimals[0]}` : ''))}`, 2)
   }
-
-  const numberMultiset = numbers.map(({ value }) => `NUM:${Number(value.toFixed(9))}`).sort()
-  const operatorMultiset = operators.map((operator) => `OP:${operator}`).sort()
-  return {
-    tokens: [...numberMultiset, ...operatorMultiset].sort(),
-    numbers: numberMultiset,
-    operators: operatorMultiset,
+  const wordMatches = [...normalized.matchAll(NUMBER_WORD_PATTERN)]
+  let run = []
+  const flush = () => {
+    if (!run.length) return
+    const value = parseVietnameseNumber(run.map((item) => item[0]).join(' '))
+    if (Number.isFinite(value)) add(run[0].index, run.at(-1).index + run.at(-1)[0].length, `NUM:${value}`, 1)
+    run = []
   }
+  for (const match of wordMatches) {
+    if (run.length && !/^\s*$/.test(normalized.slice(run.at(-1).index + run.at(-1)[0].length, match.index))) flush()
+    run.push(match)
+  }
+  flush()
+  for (const match of normalized.matchAll(/(?<!\p{L})(?:không|một|hai|ba|bốn|tư|năm|sáu|bảy|tám|chín|mười|mươi|trăm|nghìn|ngàn|triệu|tỷ|tỉ|lẻ|linh|mốt|lăm)(?:\s+(?:không|một|hai|ba|bốn|tư|năm|sáu|bảy|tám|chín|mười|mươi|trăm|nghìn|ngàn|triệu|tỷ|tỉ|lẻ|linh|mốt|lăm))*\s+phẩy\s+(?:không|một|hai|ba|bốn|tư|năm|lăm|sáu|bảy|tám|chín)(?:\s+(?:không|một|hai|ba|bốn|tư|năm|lăm|sáu|bảy|tám|chín))*/gu)) {
+    const [integer, decimal] = match[0].split(/\s+phẩy\s+/u)
+    const digits = decimal.split(/\s+/u).map((word) => DIGITS[word]).join('')
+    add(match.index, match.index + match[0].length, `NUM:${Number(`${parseVietnameseNumber(integer)}.${digits}`)}`, 4)
+  }
+  for (const match of normalized.matchAll(OPERATOR_PATTERN)) {
+    const term = OPERATOR_TERMS.find(([value]) => value === match[0])
+    add(match.index, match.index + match[0].length, `OP:${term[1]}`, 3)
+  }
+  for (const match of normalized.matchAll(SYMBOL_PATTERN)) {
+    add(match.index, match.index + match[0].length, `OP:${SYMBOL_TERMS.find(([term]) => term === match[0])[1]}`, 3)
+  }
+  for (const match of normalized.matchAll(/(?<!\p{L})(âm|dương)(?!\p{L})(?=\s+(?:vô cực|\d|không|một|hai|ba|bốn|tư|năm|lăm|sáu|bảy|tám|chín|mười|mươi))/gu)) {
+    add(match.index, match.index + match[0].length, `OP:${match[0] === 'âm' ? 'NEG' : 'POS'}`, 3)
+  }
+  for (const [term, unit] of MEASUREMENT_UNITS) {
+    const pattern = new RegExp(`(?<![\\p{L}])${term}(?![\\p{L}])`, 'gu')
+    for (const match of normalized.matchAll(pattern)) {
+      if (matches.some((item) => item.token.startsWith('NUM:') && item.end <= match.index && /^\s*$/.test(normalized.slice(item.end, match.index)))) {
+        add(match.index, match.index + term.length, `UNIT:${unit}`, 2)
+      }
+    }
+  }
+  matches.sort((a, b) => a.start - b.start || b.priority - a.priority || b.end - a.end)
+  const selected = []
+  for (const match of matches) {
+    if (selected.some((item) => match.start < item.end && match.end > item.start)) continue
+    selected.push(match)
+  }
+  for (let index = 0; index < selected.length; index += 1) {
+    const item = selected[index]
+    if (item.token !== 'OP:SUB' && item.token !== 'OP:ADD') continue
+    const next = selected[index + 1]
+    const previous = selected[index - 1]
+    const unary = next?.token.startsWith('NUM:') && /^\s*$/.test(normalized.slice(item.end, next.start))
+      && (!previous || previous.token.startsWith('OP:') || /[([{,:;]/u.test(normalized.slice(previous.end, item.start)))
+    if (unary) item.token = item.token === 'OP:SUB' ? 'OP:NEG' : 'OP:POS'
+  }
+  const tokens = selected.map((item) => item.token)
+  return { tokens, numbers: tokens.filter((token) => token.startsWith('NUM:')), operators: tokens.filter((token) => token.startsWith('OP:')), errors }
 }
 
 /**
@@ -288,13 +309,13 @@ export function semanticFingerprint(text) {
 export function compareSemantics(left, right) {
   const a = semanticFingerprint(left)
   const b = semanticFingerprint(right)
-  const same = a.tokens.length === b.tokens.length && a.tokens.every((token, index) => token === b.tokens[index])
+  const same = a.errors.length === 0 && b.errors.length === 0 && a.tokens.length === b.tokens.length && a.tokens.every((token, index) => token === b.tokens[index])
   return {
     ok: same,
     left: a,
     right: b,
-    missing: same ? [] : a.tokens.filter((token) => !b.tokens.includes(token)),
-    added: same ? [] : b.tokens.filter((token) => !a.tokens.includes(token)),
+    missing: same ? [] : [...a.errors, ...a.tokens.filter((token, index) => token !== b.tokens[index])],
+    added: same ? [] : [...b.errors, ...b.tokens.filter((token, index) => token !== a.tokens[index])],
   }
 }
 

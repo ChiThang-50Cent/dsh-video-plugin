@@ -2,6 +2,8 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import path from 'node:path'
+import os from 'node:os'
+import { spawnSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { parseNarration } from '../scripts/lib/narration-model.mjs'
 import { reviseNarration } from '../scripts/revise-narration.mjs'
@@ -92,7 +94,7 @@ test('byte-identical or released revisions are refused without explicit authoriz
 })
 
 test('legacy artifacts migrate into blocked v2 scaffolding without touching the originals', (t) => {
-  const dir = fs.mkdtempSync(path.join(import.meta.dirname, '..', '.cache', 'migrate-test-'))
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'migrate-test-'))
   t.after(() => fs.rmSync(dir, { recursive: true, force: true }))
   fs.writeFileSync(path.join(dir, 'narration.md'), NARRATION)
   fs.writeFileSync(path.join(dir, 'production.json'), JSON.stringify({ schemaVersion: 1, mode: 'narrated', voiceOver: true, narrationRisk: 'high' }))
@@ -107,9 +109,43 @@ test('legacy artifacts migrate into blocked v2 scaffolding without touching the 
     assert.equal(fs.readFileSync(path.join(dir, 'narration-review.json'), 'utf8'), JSON.stringify(oldReview))
     assert.equal(fs.readFileSync(path.join(dir, 'claim-check.json'), 'utf8'), JSON.stringify(oldClaims))
     const review = JSON.parse(fs.readFileSync(path.join(dir, 'narration-review.migrating.json'), 'utf8'))
+    assert.equal(review.throughlineMap, 'throughline-map.json')
+    assert.equal(review.claimCheckFile, 'claim-check.json')
     assert.equal(review.schemaVersion, 2)
     assert.equal(review.status, 'blocked')
     assert.equal(review.independentReview.required, true)
     assert.equal(validateNarration(dir).ok, false)
   })
+})
+
+test('revision and migration commands accept an episode directory', (t) => {
+  const { episode } = setup(t)
+  const next = path.join(episode.dir, 'next.md')
+  fs.writeFileSync(next, `${NARRATION}\nNew ending.\n`)
+  const revise = spawnSync(process.execPath, ['scripts/revise-narration.mjs', episode.dir, '--from', next, '--reason', 'Correction', '--json'], { encoding: 'utf8' })
+  assert.equal(revise.status, 0, revise.stderr)
+  assert.equal(JSON.parse(revise.stdout).reviewStatus, 'blocked')
+  const migrate = spawnSync(process.execPath, ['scripts/migrate-narration.mjs', episode.dir, '--json'], { encoding: 'utf8' })
+  assert.equal(migrate.status, 0, migrate.stderr)
+  assert.equal(JSON.parse(migrate.stdout).created.length, 3)
+})
+
+test('all supported released masters require authorization and are marked stale', (t) => {
+  for (const [kind, relative] of [['default', 'exports/master.mov'], ['production', 'custom/final.mov'], ['timeline', 'custom/timeline.webm']]) {
+    const { episode } = setup(t)
+    const file = path.join(episode.dir, relative)
+    fs.mkdirSync(path.dirname(file), { recursive: true })
+    fs.writeFileSync(file, 'master')
+    if (kind !== 'default') {
+      const config = path.join(episode.dir, `${kind}.json`)
+      const data = JSON.parse(fs.readFileSync(config, 'utf8'))
+      data.finalOutput = relative
+      fs.writeFileSync(config, JSON.stringify(data))
+    }
+    const next = path.join(episode.dir, 'next.md')
+    fs.writeFileSync(next, `${NARRATION}\nNew ending.\n`)
+    assert.throws(() => reviseNarration({ episodeDir: episode.dir, from: next, reason: 'Correction' }), /released master/)
+    reviseNarration({ episodeDir: episode.dir, from: next, reason: 'Correction', allowReleased: true })
+    assert.equal(JSON.parse(fs.readFileSync(path.join(episode.dir, 'exports/master.stale.json'))).master, relative)
+  }
 })

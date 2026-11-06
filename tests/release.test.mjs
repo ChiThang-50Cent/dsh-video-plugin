@@ -8,6 +8,7 @@ import { createHash } from 'node:crypto'
 import { validateEpisode } from '../scripts/validate-episode.mjs'
 import { qaMedia } from '../scripts/qa-media.mjs'
 import { createEpisode } from '../scripts/new-episode.mjs'
+import { makeEpisode, makeSegments, writeSegmentManifest } from './helpers/episode-fixtures.mjs'
 
 function tempRoot(t) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'video-studio-release-'))
@@ -128,4 +129,88 @@ test('a master marked stale by a narration revision cannot release', async (t) =
   const result = await validateEpisode(episode, { release: true })
   assert.equal(result.release.status, 'FAIL')
   assert.match(result.release.errors.join('\n'), /master\.stale\.json|superseded narration/)
+})
+
+test('release rejects stale artifacts and conflicting mode overrides while lint warns', async (t) => {
+  const root = tempRoot(t)
+  assert.equal(makeSilentMaster(root), true)
+  const master = path.join(root, 'master.mp4')
+  const episode = path.join(root, 'episode')
+  fs.mkdirSync(episode)
+  writeSilentRelease(episode, { masterFile: master })
+  const timelineFile = path.join(episode, 'timeline.json')
+  const timeline = JSON.parse(fs.readFileSync(timelineFile))
+  timeline.stale = true
+  fs.writeFileSync(timelineFile, JSON.stringify(timeline))
+  assert.equal((await validateEpisode(episode)).ok, true)
+  assert.equal((await validateEpisode(episode, { release: true })).release.status, 'FAIL')
+  const override = await validateEpisode(episode, { release: true, mode: 'narrated' })
+  assert.ok(override.release.errors.some((error) => /conflicts/.test(error)))
+  assert.equal(override.release.narration.ok, false)
+})
+
+test('a configured missing master never falls back to an older default master', async (t) => {
+  const root = tempRoot(t)
+  assert.equal(makeSilentMaster(root), true)
+  const episode = path.join(root, 'episode')
+  fs.mkdirSync(episode)
+  writeSilentRelease(episode, { masterFile: path.join(root, 'master.mp4') })
+  for (const source of ['production.json', 'timeline.json']) {
+    const file = path.join(episode, source)
+    const original = JSON.parse(fs.readFileSync(file, 'utf8'))
+    fs.writeFileSync(file, JSON.stringify({ ...original, finalOutput: 'exports/new-master.mp4' }))
+    const result = await validateEpisode(episode, { release: true })
+    assert.equal(result.release.status, 'INCOMPLETE')
+    assert.ok(result.release.missing.some((message) => message.includes('exports/new-master.mp4')))
+    assert.equal(result.release.master, null)
+    fs.writeFileSync(file, JSON.stringify(original))
+  }
+})
+
+test('release reconciles segments and probes hashed chunks', async (t) => {
+  const root = tempRoot(t)
+  assert.equal(makeSilentMaster(root), true)
+  const episode = path.join(root, 'episode')
+  fs.mkdirSync(episode)
+  writeSilentRelease(episode, { masterFile: path.join(root, 'master.mp4') })
+  fs.writeFileSync(path.join(episode, 'production.json'), JSON.stringify({ mode: 'narrated' }))
+  fs.writeFileSync(path.join(episode, 'audio', 'segments.json'), JSON.stringify({ segments: [{ id: 'one', text: 'Hello' }, { id: 'two', text: 'World' }] }))
+  const wav = path.join(episode, 'audio', 'chunk.wav')
+  assert.equal(spawnSync('ffmpeg', ['-v', 'error', '-f', 'lavfi', '-i', 'sine=duration=2', '-y', wav]).status, 0)
+  const sha256 = createHash('sha256').update(fs.readFileSync(wav)).digest('hex')
+  fs.writeFileSync(path.join(episode, 'audio', 'manifest.json'), JSON.stringify({ chunks: [
+    { id: 'one', path: 'audio/chunk.wav', durationSec: 1, sha256 },
+    { id: 'one', path: 'audio/chunk.wav', durationSec: 2 },
+    { id: 'other', path: 'audio/chunk.wav', durationSec: 2, sha256 },
+  ] }))
+  const result = await validateEpisode(episode, { release: true })
+  const errors = result.release.errors.join('\n')
+  assert.match(errors, /repeats segment/)
+  assert.match(errors, /unknown segment/)
+  assert.match(errors, /no audio chunk/)
+  assert.match(errors, /requires a sha256/)
+  assert.match(errors, /declared duration/)
+  assert.match(errors, /exceed timeline/)
+  fs.writeFileSync(wav, 'not audio'.repeat(50))
+  const corrupt = await validateEpisode(episode, { release: true })
+  assert.ok(corrupt.release.missing.some((item) => /ffprobe/.test(item)))
+})
+
+test('fully verified narrated episode passes release', async (t) => {
+  const narration = '# Buổi sáng\n\nÁnh sáng tràn qua khung cửa và đọng lại trên mặt bàn gỗ. Người nghe có thể hình dung một căn phòng yên tĩnh, nơi mọi vật còn đang ngủ. Không có con số nào cần kiểm chứng, không có tuyên bố khoa học nào được đưa ra. Đây chỉ là một đoạn mở đầu quan sát, để người xem chậm lại trước khi bước vào câu chuyện.\n\nRồi tiếng chim ngoài hiên cất lên, rất khẽ, như một dấu phẩy trong câu văn dài của buổi sớm. Không có gì phải chứng minh; chỉ có một trạng thái cần được nghe thấy.\n'
+  const episode = makeEpisode(t, { narration })
+  const segments = makeSegments(episode.parsed, episode.hash, 1)
+  writeSegmentManifest(episode.dir, segments)
+  const audio = path.join(episode.dir, 'audio', 'voice.wav')
+  assert.equal(spawnSync('ffmpeg', ['-v', 'error', '-f', 'lavfi', '-i', 'sine=duration=1', '-y', audio]).status, 0)
+  const master = path.join(episode.dir, 'exports', 'master.mp4')
+  assert.equal(spawnSync('ffmpeg', ['-v', 'error', '-f', 'lavfi', '-i', 'color=s=320x180:d=2:r=30', '-i', audio, '-c:v', 'mpeg4', '-c:a', 'aac', '-y', master]).status, 0)
+  fs.writeFileSync(path.join(episode.dir, 'storyboard.json'), JSON.stringify({ scenes: [{ id: 's01-title', reuseClass: 'A', templateId: 'title', narrationSegments: [segments.segments[0].id] }] }))
+  fs.writeFileSync(path.join(episode.dir, 'timeline.json'), JSON.stringify({ durationSec: 2, scenes: [{ id: 's01-title', startSec: 0, durationSec: 2 }] }))
+  fs.writeFileSync(path.join(episode.dir, 'audio', 'manifest.json'), JSON.stringify({ narrationSha256: episode.hash, chunks: [{ id: segments.segments[0].id, path: 'audio/voice.wav', durationSec: 1, sha256: createHash('sha256').update(fs.readFileSync(audio)).digest('hex') }] }))
+  fs.writeFileSync(path.join(episode.dir, 'qa', 'scene', 's01-title.json'), JSON.stringify({ status: 'PASS' }))
+  fs.writeFileSync(path.join(episode.dir, 'qa', 'final.json'), JSON.stringify({ status: 'PASS', blockers: [] }))
+  fs.writeFileSync(path.join(episode.dir, 'qa', 'media.json'), JSON.stringify(qaMedia(master)))
+  const result = await validateEpisode(episode.dir, { release: true })
+  assert.equal(result.release.status, 'PASS', result.errors.join('\n'))
 })

@@ -5,10 +5,10 @@
 ## Verified mechanisms
 
 1. `@deepseek-ai/dsh-agent-preset-registry` selects preset definitions; `@deepseek-ai/dsh-agent-preset` composes persona/tools/skill/boundaries through Cordis YAML. Rows accept `id`, `plugins`, optional `name`, `description`, `order`; children accept `id`, `name`, `config`, `disabled` (including `!!js`).
-2. `@deepseek-ai/dsh-skill-filesystem` discovers `<projectRoot>/.dsh/skills`, `<projectRoot>/.agents/skills`, `~/.dsh/skills` and `~/.agents/skills`. This bundle does not depend on that discovery: `index.js` registers the nine skills with `ctx.skills.register` in the global layer. Project-root copies still outrank runtime entries by rank.
+2. `@deepseek-ai/dsh-skill-filesystem` discovers `<projectRoot>/.dsh/skills`, `<projectRoot>/.agents/skills`, `~/.dsh/skills` and `~/.agents/skills`. The bundle contributes a global `ctx.skills.registerProvider` catalog at bundled rank (600), below project skills, and renders each body using the lookup workspace.
 3. `@deepseek-ai/dsh-subagent`, `-spawn-in-process` and `-tool-subagent` implement delegated children. Only in-process spawn supports an independent `agentPreset`; `maxDepth: 1` prevents recursion. The tool returns a child id immediately; parent receives completion later.
 4. `@deepseek-ai/dsh-tool-workflow` is for explicitly requested large fan-out; use direct `subagent` for one or two workers.
-5. `AGENTS.md` is auto-loaded through `dsh-agent-instructions`.
+5. `dsh-agent-instructions` auto-loads the workspace `AGENTS.md`; the producer also reads the studio rules path printed in the skill header.
 6. A profile lives in `$DSH_HOME/profiles/<name>/` and assembles bundle patches, the profile patch and overlays. `--patch` / `--dump-config` inspect composition without persisting.
 7. A profile **bundle** declares `dsh.bundle.patch`; `plugin_manager install_bundle` accepts an absolute local directory, validates the patch and activates it. A configuration-only bundle needs no Host row; this bundle inserts one so its Host code can register skills.
 8. Each bundle row targets a package resolvable from the profile or DSH installation. This bundle declares no dependency on shipped packages beyond those rows.
@@ -31,9 +31,9 @@ locale/, icon.svg   # display metadata
 The plugin and every CLI use `scripts/studio-paths.mjs`:
 
 - **code root**: installed package (read-only in npm installs), holding `skills/`, `scripts/`, `kit/`, `AGENTS.md` and built-in `library/`.
-- **data root**: `projects/`, `library/`, `.cache/`; defaults to the code root.
+- **data root**: `projects/`, `library/`, `.cache/`; defaults to the current session workspace.
 
-Precedence: explicit `dataRoot`/`--data-root` (relative to code root) → `VIDEO_STUDIO_ROOT` (relative to cwd) → `studio.config.json` (`dataRoot`, relative to its directory) → code root. `studio-root.mjs` prints the effective paths. `init-workspace.mjs` creates the data tree and copies missing built-in style files/catalog without overwriting; `new-episode.mjs` calls it. This makes an npm-installed plugin with an external data root usable from any workspace.
+Precedence: explicit `dataRoot`/`--data-root` → `VIDEO_STUDIO_ROOT` → `studio.config.json` (`dataRoot`) → nearest initialized workspace ancestor (marked by `library/catalog.json`), or cwd. Relative explicit and environment values resolve against cwd; config values resolve against the config file's directory. Run the code root's `studio-root.mjs` from the workspace to print effective paths. `init-workspace.mjs` creates the data tree and copies missing built-in style files/catalog without overwriting; `new-episode.mjs` calls it.
 
 The package `files` list includes only public library payload: catalog, default style, style `style.json`/`notes.md`/`reference.external.md`. User-provided transcripts are not redistributed. `validate-style-refs.mjs` accepts a missing source only when `style.json` declares `sourceBundled: false` and `externalSource`.
 

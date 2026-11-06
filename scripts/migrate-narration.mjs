@@ -93,8 +93,8 @@ export function migrateNarration(options) {
     criteriaEvidence: {},
     blockers: ['Migrated from legacy v1 artifacts. Fill the through-line, claim evidence and cited review before renaming; this is not a PASS.'],
     actionableFindings: [],
-    throughlineMap: 'throughline-map.migrating.json',
-    claimCheckFile: 'claim-check.migrating.json',
+    throughlineMap: 'throughline-map.json',
+    claimCheckFile: 'claim-check.json',
     reviewPasses: 0,
     independentReview: { required: highRisk, status: 'missing' },
     revision: 1,
@@ -119,7 +119,7 @@ function main() {
     return
   }
   try {
-    const result = migrateNarration(args)
+    const result = migrateNarration({ ...args, episodeDir: args.episode })
     if (args.json) console.log(JSON.stringify(result, null, 2))
     else {
       console.log(`Migration scaffolding written: ${result.created.join(', ')}`)

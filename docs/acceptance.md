@@ -26,6 +26,8 @@
 
 ## Audio
 - [ ] `audio-preflight.mjs` verifies provider, device/GPU requirement, voice reference and a short sample; `nvidia-smi` alone is not readiness.
+- [ ] Audio paths are episode-relative; every approved segment has exactly one hashed, probeable chunk whose measured duration fits the timeline.
+- [ ] Release rejects stale artifacts and conflicting production-mode overrides; unavailable strict audio checks cannot pass.
 - [ ] GPU requirement failure stops rather than silently using CPU; jobs have explicit timeout/retry policy.
 - [ ] `qa-audio.mjs` checks numbers/operators/omissions and optional audio silence/clipping; ASR evidence is not truth.
 

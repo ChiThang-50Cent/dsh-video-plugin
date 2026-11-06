@@ -2,7 +2,7 @@
 
 - This repository produces many kinds of videos; no hard-coded video genre, renderer, TTS provider or machine-specific path.
 - Invoke the matching `video-*` skill for the task. The skills ship in `skills/` and are registered profile-wide by the bundle, so they also load in a session opened outside this checkout. `video-produce` is the accountable coordinator when the user wants a full deliverable.
-- Resolve `projects/`, `library/`, `scripts/` and `.cache/` against the studio roots printed at the top of each loaded skill, not against the session working directory. Code root and data root may differ; `node scripts/studio-root.mjs` prints them, and `scripts/init-workspace.mjs` initializes an external data root idempotently.
+- Resolve `scripts/` against the code root and `projects/`, `library/`, `.cache/` against the data root printed in the skill header. The data root defaults to the session workspace; explicit settings may override it. Run the code root's `scripts/studio-root.mjs` from the workspace to print effective roots; `scripts/init-workspace.mjs` initializes the data root idempotently.
 - Accept natural-language requests. Extract facts from the user files and existing project settings rather than demand an intake form. Record the production mode (`narrated`, `silent`, `text-only`, `mixed`); never create fake narration for a silent or text-only film.
 - Draft narration and validate factual/math claims BEFORE TTS or scene coding; narration is independent of individual animation beats.
 - Build the through-line map before prose: central question, promise, audience, and every section's purpose, connection, why it is here and the takeaway.

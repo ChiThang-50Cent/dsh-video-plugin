@@ -24,7 +24,7 @@ node scripts/migrate-narration.mjs <episode-dir>
 #   narration-review.migrating.json   (status: blocked)
 ```
 
-The command does not modify `narration.md`, `narration-review.json` or `claim-check.json`. Fill every through-line field, add/verify claims with real locations, perform the editorial (and independent, when high-risk) review, write the cited evidence and findings, then rename the three files only after the review is genuinely done. Run:
+The command does not modify `narration.md`, `narration-review.json` or `claim-check.json`. The migrating review already points to the canonical `throughline-map.json` and `claim-check.json` names used after promotion. Fill every through-line field, add/verify claims with real locations, perform the editorial (and independent, when high-risk) review, write the cited evidence and findings, then rename the three files only after the review is genuinely done. Run:
 
 ```bash
 node scripts/validate-narration.mjs <episode-dir> --integrity

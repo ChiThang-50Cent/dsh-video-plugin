@@ -9,6 +9,7 @@
 import {
   CRITERIA,
   NARRATED_MODES,
+  claimRisk,
   containsExcerpt,
   lower,
   normalizeForMatch,
@@ -157,7 +158,7 @@ export function validateNarrationEditorial(context, options = {}) {
     for (const ref of (Array.isArray(item?.claimRefs) ? item.claimRefs : [])) accuracyRefs.add(ref)
   }
   for (const claim of (Array.isArray(context.claims?.claims) ? context.claims.claims : [])) {
-    if (['high', 'critical'].includes(lower(claim?.risk)) && !accuracyRefs.has(claim?.id)) {
+    if (['high', 'critical'].includes(claimRisk(claim)) && !accuracyRefs.has(claim?.id)) {
       errors.push(`high-risk claim ${JSON.stringify(claim?.id ?? claim?.claim)} is not cited by accuracy evidence; add a claimRef after checking it`)
     }
   }

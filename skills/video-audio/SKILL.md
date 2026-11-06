@@ -51,10 +51,12 @@ Create `audio/segments.json` at sentence/paragraph boundaries the engine handles
         "risk": "low"
       }]
     },
-    "audio": "narration/seg-001.wav"
+    "audio": "audio/narration/seg-001.wav"
   }]
 }
 ```
+
+Segment audio paths are relative to the episode directory, not `audio/`.
 
 Contract:
 
@@ -83,3 +85,4 @@ node <studio>/scripts/qa-audio.mjs <episode-dir> --segments audio/segments.json 
 3. Measure every WAV in seconds and build `timeline.json` from measured durations plus authored pauses/transitions. Word-count estimates are planning-only.
 4. Music/SFX need attribution/license and suitable loudness; keep separate stems. No copyrighted media without authorization.
 5. Output `audio/manifest.json` with `narrationSha256`, segment IDs, engine identity, fingerprints, paths, hashes, measured durations, subtitle cues, QA summary and any `stale` marker. Release rejects a manifest that cannot bind the audio to the frozen script. Do not regenerate unchanged audio during scene or layout edits.
+Each chunk must identify its approved segment (`segmentId` or matching `id`), include a SHA-256 and measured duration, and contain a probeable audio stream. Exactly one chunk is required per approved segment.

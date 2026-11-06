@@ -141,24 +141,20 @@ function overlapOf(intervals) {
 }
 
 function assistantUsage(events) {
-  const messages = events.filter((event) => event.type === 'assistant/message' && event.data?.usage !== undefined)
-  const sum = (key) => messages.reduce((total, event) => total + (Number(event.data.usage[key]) || 0), 0)
-  const sumAliases = (keys) => messages.reduce((total, event) => {
-    for (const key of keys) {
-      if (event.data.usage[key] !== undefined) return total + (Number(event.data.usage[key]) || 0)
-    }
-    return total
-  }, 0)
+  const messages = events.filter((event) => event.type === 'assistant/message')
+  const sumAliases = (keys) => {
+    const values = messages.map((event) => keys.map((key) => event.data?.usage?.[key]).find((value) => Number.isFinite(value)))
+    return values.length > 0 && values.every((value) => value !== undefined) ? values.reduce((total, value) => total + value, 0) : null
+  }
   const cacheFields = ['cacheReadTokens', 'cachedInputTokens', 'cache_read_input_tokens']
   const writeFields = ['cacheWriteTokens', 'cacheCreationInputTokens', 'cache_creation_input_tokens']
   return {
     calls: messages.length,
-    inputTokens: sum('inputTokens'),
-    outputTokens: sum('outputTokens'),
-    totalTokens: sum('totalTokens'),
+    inputTokens: sumAliases(['inputTokens']),
+    outputTokens: sumAliases(['outputTokens']),
+    totalTokens: sumAliases(['totalTokens']),
     cachedReadTokens: sumAliases(cacheFields),
     cachedWriteTokens: sumAliases(writeFields),
-    cacheFieldObserved: messages.some((event) => [...cacheFields, ...writeFields].some((key) => event.data.usage[key] !== undefined)),
     models: [...new Set(messages.map((event) => `${event.data?.message?.source?.provider ?? 'unknown'}/${event.data?.message?.source?.model ?? 'unknown'}`))],
   }
 }
@@ -372,11 +368,16 @@ export function collectMetrics(options = {}) {
     allToolIntervals.push(...tools.intervals)
   }
   const toolUnionMs = unionLength(allToolIntervals)
-  const cachedRead = perSession.reduce((total, session) => total + session.model.cachedReadTokens, 0)
-  const cacheObserved = perSession.some((session) => session.model.cacheFieldObserved)
+  const sumModel = (key) => {
+    const active = perSession.filter((session) => session.model.calls > 0)
+    return active.length > 0 && active.every((session) => session.model[key] !== null)
+      ? active.reduce((total, session) => total + session.model[key], 0) : null
+  }
   const latencySamples = perSession.reduce((total, session) => total + session.modelLatency.samples, 0)
   const unavailable = []
-  if (!cacheObserved) unavailable.push('cached token counters were not present in these sessions')
+  for (const key of ['inputTokens', 'outputTokens', 'totalTokens', 'cachedReadTokens', 'cachedWriteTokens']) {
+    if (sumModel(key) === null) unavailable.push(`${key} counters were not present for every model call`)
+  }
   if (latencySamples === 0) unavailable.push('model latency could not be measured from event timestamps')
   const failedJobs = perSession.reduce((total, session) => total + session.jobs.failed, 0)
   const failedTools = perSession.reduce((total, session) => total + session.tools.failures.length, 0)
@@ -407,11 +408,11 @@ export function collectMetrics(options = {}) {
       toolOverlapMs: Math.max(0, toolExecutionMs - toolUnionMs),
       modelLatencyMs: latencySamples === 0 ? null : perSession.reduce((total, session) => total + session.modelLatency.measuredMs, 0),
       modelCalls: perSession.reduce((total, session) => total + session.model.calls, 0),
-      inputTokens: perSession.reduce((total, session) => total + session.model.inputTokens, 0),
-      outputTokens: perSession.reduce((total, session) => total + session.model.outputTokens, 0),
-      totalTokens: perSession.reduce((total, session) => total + session.model.totalTokens, 0),
-      cachedReadTokens: cachedRead === 0 && !cacheObserved ? null : cachedRead,
-      cachedWriteTokens: cacheObserved ? perSession.reduce((total, session) => total + session.model.cachedWriteTokens, 0) : null,
+      inputTokens: sumModel('inputTokens'),
+      outputTokens: sumModel('outputTokens'),
+      totalTokens: sumModel('totalTokens'),
+      cachedReadTokens: sumModel('cachedReadTokens'),
+      cachedWriteTokens: sumModel('cachedWriteTokens'),
       turns: perSession.reduce((total, session) => total + session.turns, 0),
       steps: perSession.reduce((total, session) => total + session.steps, 0),
       toolCalls: perSession.reduce((total, session) => total + session.tools.calls, 0),

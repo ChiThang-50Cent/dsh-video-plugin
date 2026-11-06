@@ -182,6 +182,8 @@ export function runAudioPreflight(options = {}, deps = {}) {
     const deviceProbe = (deps.probeCommand ?? probeCommand)(options.deviceProbeCommand, [], { timeoutMs: options.timeoutMs ?? 30_000 })
     const expected = typeof options.deviceProbeExpect === 'string' && options.deviceProbeExpect.length > 0 ? options.deviceProbeExpect : undefined
     const matched = deviceProbe.available && (expected === undefined || deviceProbe.summary.includes(expected))
+      && /\b(?:cuda|gpu|nvidia|rocm|hip|metal|mps)\b/i.test(deviceProbe.summary)
+      && !/\b(?:cpu|unavailable|disabled|not available|no gpu|false)\b/i.test(deviceProbe.summary)
     device = { kind: 'probe', verified: matched, source: options.deviceProbeCommand, detail: deviceProbe.summary || deviceProbe.error }
   } else {
     device = {
@@ -220,8 +222,6 @@ export function runAudioPreflight(options = {}, deps = {}) {
     }
     checks.push({ id: 'voice-reference.suitability', status: pass ? 'PASS' : 'FAIL', detail: pass ? 'duration, format, silence and clipping are within bounds' : analysis.error ?? 'voice reference is too short/long, silent or clipped' })
     if (!pass) errors.push(`voice reference is not suitable: ${analysis.error ?? 'duration/silence/clipping check failed'}`)
-  } else if (providerDefinition.requiresVoice) {
-    errors.push(`provider "${providerId}" needs --voice <model/voice id>`)
   } else {
     warnings.push('no voice reference supplied; speaker similarity and timbre cannot be checked')
   }

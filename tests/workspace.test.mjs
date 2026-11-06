@@ -102,6 +102,59 @@ test('external data root wins over the working directory and is idempotent', (t)
   assert.match(styles.stdout, /RESULT: PASS/)
 })
 
+test('CLI defaults to workspace without writing episode into package', (t) => {
+  const workspace = tempRoot(t)
+  const env = { VIDEO_STUDIO_ROOT: '', VIDEO_STUDIO_CONFIG: '' }
+  const series = `workspace-${path.basename(workspace).toLowerCase()}`
+  const result = run('new-episode.mjs', [series, 'ep-001'], { cwd: workspace, env })
+  assert.equal(result.status, 0, result.stderr)
+  assert.ok(fs.existsSync(path.join(workspace, 'projects', series, 'episodes', 'ep-001')))
+  assert.equal(fs.existsSync(path.join(repoRoot, 'projects', series)), false)
+})
+
+test('nested episode commands discover their initialized workspace', (t) => {
+  const workspace = tempRoot(t)
+  const env = { VIDEO_STUDIO_ROOT: '', VIDEO_STUDIO_CONFIG: '' }
+  const first = run('new-episode.mjs', ['series', 'ep-001'], { cwd: workspace, env })
+  assert.equal(first.status, 0, first.stderr)
+  const episode = path.join(workspace, 'projects', 'series', 'episodes', 'ep-001')
+  const roots = run('studio-root.mjs', [], { cwd: episode, env })
+  assert.equal(roots.status, 0, roots.stderr)
+  assert.equal(JSON.parse(roots.stdout).dataRoot, workspace)
+  assert.equal(JSON.parse(roots.stdout).rootSource, 'workspace-ancestor')
+  const second = run('new-episode.mjs', ['series', 'ep-002'], { cwd: episode, env })
+  assert.equal(second.status, 0, second.stderr)
+  assert.ok(fs.existsSync(path.join(workspace, 'projects', 'series', 'episodes', 'ep-002')))
+  assert.equal(fs.existsSync(path.join(episode, 'projects')), false)
+  assert.equal(fs.existsSync(path.join(episode, 'library')), false)
+})
+
+test('config file relative data root is anchored to config directory', (t) => {
+  const root = tempRoot(t)
+  const workspace = path.join(root, 'workspace')
+  const configDir = path.join(root, 'config')
+  fs.mkdirSync(workspace)
+  fs.mkdirSync(configDir)
+  const config = path.join(configDir, 'studio.config.json')
+  fs.writeFileSync(config, JSON.stringify({ dataRoot: 'data' }))
+  const result = run('studio-root.mjs', [], { cwd: workspace, env: { VIDEO_STUDIO_ROOT: '', VIDEO_STUDIO_CONFIG: config } })
+  assert.equal(result.status, 0, result.stderr)
+  assert.equal(JSON.parse(result.stdout).dataRoot, path.join(configDir, 'data'))
+})
+
+test('initialization preserves accepted catalogs and validates them', (t) => {
+  const workspace = tempRoot(t)
+  const library = path.join(workspace, 'library')
+  fs.mkdirSync(library)
+  const catalog = path.join(library, 'catalog.json')
+  const content = JSON.stringify({ entries: [{ id: 'accepted' }] })
+  fs.writeFileSync(catalog, content)
+  assert.equal(run('init-workspace.mjs', ['--data-root', workspace]).status, 0)
+  assert.equal(fs.readFileSync(catalog, 'utf8'), content)
+  fs.writeFileSync(catalog, '{}')
+  assert.equal(run('init-workspace.mjs', ['--data-root', workspace]).status, 1)
+})
+
 test('a silent episode is created without fake narration and skips the narration gate', (t) => {
   const tmp = tempRoot(t)
   const data = path.join(tmp, 'data')
@@ -179,9 +232,10 @@ test('a clean npm package initializes its library and resolves built-in styles',
 
   const register = spawnSync(process.execPath, ['--input-type=module', '-e', `
     const mod = await import(${JSON.stringify(path.join(packageRoot, 'index.js'))});
-    const registered = [];
-    await mod.apply({ skills: { register: (skill) => registered.push(skill) }, logger: { warn() {} } }, { dataRoot: ${JSON.stringify(data)} });
-    console.log(JSON.stringify({ count: registered.length, first: registered[0].content.split('\\n').slice(0, 2).join('\\n') }));
+    let provider;
+    mod.apply({ skills: { registerProvider: (create) => { provider = create({}) } }, logger: { warn() {} } }, { dataRoot: ${JSON.stringify(data)} });
+    const skills = await provider.list({ cwd: ${JSON.stringify(elsewhere)} });
+    console.log(JSON.stringify({ count: skills.length, first: (await provider.get(skills[0], { cwd: ${JSON.stringify(elsewhere)} })).content.split('\\n').slice(0, 2).join('\\n') }));
   `], { cwd: elsewhere, encoding: 'utf8' })
   assert.equal(register.status, 0, register.stderr)
   const registration = JSON.parse(register.stdout)

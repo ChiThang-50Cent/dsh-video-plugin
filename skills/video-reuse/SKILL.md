@@ -21,9 +21,9 @@ node <studio>/scripts/promote-scene.mjs <id> <scene-code> <preview> <qa-report> 
 ```
 
 - Works on an empty library; creates parents/catalog idempotently.
-- Rejects non-PASS or contradictory QA, non-empty blockers/errors, id collisions, symlink escapes, source outside `projects/`, and unexpected file types.
-- Stages copies, hashes source/preview/QA, then atomically renames the scene directory and catalog. A failure never leaves a partial catalog entry.
-- The entry records backend compatibility (verified or explicitly unverified), template version, source episode and hashes. A promoted scene is a COPY/PATCH reference, not automatically a parameterized template.
+- Rejects non-PASS or contradictory QA, non-empty blockers/errors, id collisions, symlink escapes, source outside `projects/`, and unexpected file types. When QA specifies `sceneId`, it must match the source filename stem, not the new catalog id; Python sources are supported.
+- Stages copies, hashes source/preview/QA, then atomically renames the scene directory and catalog under a catalog lock. A failure never leaves a partial catalog entry.
+- The entry records both catalog `id` and `sourceSceneId`, backend compatibility (verified or explicitly unverified), template version, source episode and hashes. A promoted scene is a COPY/PATCH reference, not automatically a parameterized template.
 - Never overwrite an accepted id. Create a new version/id and keep old evidence.
 
 `reuseFrom` must identify an actual file and accepted QA record; otherwise `null`. Do not inflate reuse percentages by counting generic library imports as scene-template reuse. Distinguish scene reuse from shared-component usage.

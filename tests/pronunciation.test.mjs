@@ -201,3 +201,26 @@ test('symbol pronunciation can preserve the operator while changing its spoken n
   assert.equal(compareSemantics('16%', 'mười sáu phần trăm').ok, true)
   assert.equal(compareSemantics('16%', 'mười sáu').ok, false)
 })
+
+test('semantic fingerprints preserve ordered quantities, operators, signs and units', async () => {
+  const { compareSemantics } = await import('../scripts/lib/pronunciation.mjs')
+  for (const [left, right] of [
+    ['16 trừ 5 bằng 11', '5 trừ 16 bằng 11'],
+    ['−5', '5'], ['–5', '5'], ['a * b', 'a b'], ['5 km', '5 m'],
+    ['5 km 6 m', '5 m 6 km'],
+    ['2x', 'ba x'], ['2*3', 'hai ba'], ['2 * x', 'hai x'],
+  ]) assert.equal(compareSemantics(left, right).ok, false, `${left} / ${right}`)
+  for (const [left, right] of [
+    ['1.000 người', '1000 người'], ['5 km', 'năm ki-lô-mét'],
+    ['1,5 mét', 'một phẩy năm mét'],
+    ['16', 'mười sáu'], ['−5', 'âm năm'], ['a * b', 'a nhân b'],
+    ['**Quan trọng**: 2 + 3 = 5', 'Quan trọng: hai cộng ba bằng năm'],
+    ['*ghi chú* 4', 'ghi chú bốn'],
+    ['hàm g(x) = 2x', 'hàm g(x) bằng hai x'],
+    ['a m b', 'a b'], ['a * b', 'a nhân b'], ['2*3', 'hai nhân ba'],
+    ['2 * x', 'hai nhân x'],
+  ]) assert.equal(compareSemantics(left, right).ok, true, `${left} / ${right}`)
+  const ambiguous = compareSemantics('1.5 mét', '15 mét')
+  assert.equal(ambiguous.ok, false)
+  assert.match(ambiguous.missing.join(' '), /1\.5/)
+})

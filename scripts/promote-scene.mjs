@@ -19,12 +19,13 @@
  */
 import fs from 'node:fs'
 import path from 'node:path'
+import os from 'node:os'
 import { pathToFileURL } from 'node:url'
 import { createHash } from 'node:crypto'
 import { codeRoot as defaultCodeRoot, ensureWorkspace, resolveDataRoot, resolveStudioPaths } from './studio-paths.mjs'
 
 const ID = /^[a-z][a-z0-9-]{3,}$/
-const SOURCE_EXT = new Set(['.js', '.mjs', '.cjs', '.jsx', '.ts', '.tsx', '.html', '.css', '.json', '.vue', '.svelte'])
+const SOURCE_EXT = new Set(['.js', '.mjs', '.cjs', '.jsx', '.ts', '.tsx', '.html', '.css', '.json', '.vue', '.svelte', '.py'])
 const PREVIEW_EXT = new Set(['.png', '.jpg', '.jpeg', '.webp', '.gif', '.svg', '.mp4', '.webm'])
 
 function parseArgs(argv) {
@@ -189,9 +190,50 @@ export function promoteScene(options) {
     } catch (error) {
       errors.push(`QA report is not readable JSON: ${error.message}`)
     }
-    if (qa !== undefined) validateQa(qa, id, errors, projectsRoot, resolved[2] === undefined ? undefined : path.dirname(resolved[2]))
+    if (qa !== undefined && resolved[0] !== undefined) validateQa(qa, path.parse(resolved[0]).name, errors, projectsRoot, path.dirname(resolved[2]))
   }
 
+  const lockPath = path.join(library, '.catalog.lock')
+  let lock
+  const deadline = Date.now() + 30000
+  let owner
+  while (lock === undefined) {
+    try {
+      lock = fs.openSync(lockPath, 'wx')
+      try {
+        fs.writeFileSync(lock, JSON.stringify({ pid: process.pid, host: os.hostname(), createdAt: new Date().toISOString() }))
+      } catch (error) {
+        fs.closeSync(lock)
+        fs.unlinkSync(lockPath)
+        throw error
+      }
+    } catch (error) {
+      if (error.code !== 'EEXIST') throw error
+      try {
+        owner = JSON.parse(fs.readFileSync(lockPath, 'utf8'))
+        if (owner.host === os.hostname() && Number.isInteger(owner.pid) && owner.pid > 0) {
+          let alive = true
+          try { process.kill(owner.pid, 0) } catch (probe) { if (probe.code === 'ESRCH') alive = false }
+          if (!alive) {
+            const stale = `${lockPath}.stale-${process.pid}-${Date.now()}`
+            try {
+              fs.renameSync(lockPath, stale)
+              fs.unlinkSync(stale)
+            } catch (moveError) {
+              if (moveError.code !== 'ENOENT') throw moveError
+            }
+            continue
+          }
+        }
+      } catch (readError) {
+        if (readError.code && readError.code !== 'ENOENT') throw readError
+        owner = undefined
+      }
+      if (Date.now() >= deadline) throw new Error(`Timed out waiting for catalog lock ${lockPath}; owner: ${owner ? JSON.stringify(owner) : 'unknown (incomplete lock)'}; inspect and remove only if no promotion is running`)
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 25)
+    }
+  }
+  try {
   const catalog = readCatalog(catalogPath, errors)
   if (catalog !== undefined && catalog.entries.some((entry) => entry?.id === id)) {
     errors.push(`catalog id already exists; do not overwrite an accepted version: ${id}`)
@@ -230,6 +272,7 @@ export function promoteScene(options) {
       : (Array.isArray(qa?.tags) ? qa.tags.filter((tag) => typeof tag === 'string') : [])
     const entry = {
       id,
+      sourceSceneId: path.parse(resolved[0]).name,
       category: 'accepted-example',
       purpose: options.purpose ?? (typeof qa?.purpose === 'string' ? qa.purpose : 'Describe visual intent before generalizing'),
       tags,
@@ -280,6 +323,10 @@ export function promoteScene(options) {
   } finally {
     if (fs.existsSync(staging)) fs.rmSync(staging, { recursive: true, force: true })
     if (fs.existsSync(tempCatalog)) fs.rmSync(tempCatalog, { force: true })
+  }
+  } finally {
+    fs.closeSync(lock)
+    fs.unlinkSync(lockPath)
   }
 }
 

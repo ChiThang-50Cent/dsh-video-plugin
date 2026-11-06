@@ -94,3 +94,22 @@ test('metrics selection follows parent sessions and is reproducible', (t) => {
   assert.equal(byEpisode.sessions.length, 2)
   assert.equal(byEpisode.aggregate.workerSessions, 1)
 })
+
+test('missing usage and independent cache counters remain unavailable', (t) => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'metrics-missing-'))
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }))
+  writeSession(dir, 'session-main', {}, [
+    { type: 'assistant/message', time: 1, data: { usage: { cacheReadTokens: 5 } } },
+    { type: 'assistant/message', time: 2, data: {} },
+  ])
+  const result = collectMetrics({ sessionsDir: dir })
+  assert.equal(result.aggregate.modelCalls, 2)
+  assert.equal(result.aggregate.inputTokens, null)
+  assert.equal(result.aggregate.cachedReadTokens, null)
+  assert.equal(result.aggregate.cachedWriteTokens, null)
+  const dir2 = path.join(dir, 'other')
+  writeSession(dir2, 'session-other', {}, [{ type: 'assistant/message', time: 1, data: { usage: { cacheReadTokens: 5 } } }])
+  const separate = collectMetrics({ sessionsDir: dir2 })
+  assert.equal(separate.aggregate.cachedReadTokens, 5)
+  assert.equal(separate.aggregate.cachedWriteTokens, null)
+})

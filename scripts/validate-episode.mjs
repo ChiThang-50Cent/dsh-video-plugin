@@ -20,7 +20,8 @@ import { createHash } from 'node:crypto'
 import { createReadStream, existsSync, readFileSync, statSync } from 'node:fs'
 import path from 'node:path'
 import { pathToFileURL } from 'node:url'
-import { MODES, NARRATED_MODES, readProductionMode, sha256File } from './lib/narration-model.mjs'
+import { MODES, NARRATED_MODES, sha256File } from './lib/narration-model.mjs'
+import { findMaster, resolveProductionMode } from './lib/episode-artifacts.mjs'
 import { runBounded } from './lib/bounded.mjs'
 import { validateNarration } from './validate-narration.mjs'
 
@@ -84,8 +85,8 @@ export async function validateEpisode(episodeDir, options = {}) {
     throw error
   }
 
-  const modeInfo = readProductionMode(root)
-  const mode = options.mode ?? modeInfo.mode
+  const modeInfo = resolveProductionMode(root, options.mode)
+  const mode = modeInfo.mode
   if (!MODES.includes(mode)) errors.push(`Production mode is ${JSON.stringify(mode)}; expected one of ${MODES.join(', ')}`)
   if (modeInfo.error !== undefined) warnings.push(modeInfo.error)
   const productionPath = path.join(root, 'production.json')
@@ -159,6 +160,8 @@ export async function validateEpisode(episodeDir, options = {}) {
   for (const scene of scenes) {
     if (!timed.has(scene.id) && timedScenes.length > 0) warnings.push(`Storyboard scene has no timeline entry: ${scene.id}`)
   }
+  const declaredAudioDuration = (Array.isArray(audio.chunks) ? audio.chunks : []).reduce((sum, chunk) => sum + (Number.isFinite(chunk?.durationSec) ? chunk.durationSec : Number.isFinite(chunk?.duration) ? chunk.duration : 0), 0)
+  if (Number.isFinite(duration) && declaredAudioDuration > duration + 0.05) warnings.push(`declared audio duration (${declaredAudioDuration.toFixed(2)}s) exceeds timeline duration (${duration}s)`)
   if (!Array.isArray(audio.chunks)) errors.push('audio/manifest.json chunks must be an array')
 
   const presentNarration = ['narration.md', 'narration-review.json', 'claim-check.json'].filter((file) => existsSync(path.join(root, file)))
@@ -188,14 +191,22 @@ export async function validateEpisode(episodeDir, options = {}) {
   if (options.release === true) {
     const releaseErrors = []
     const releaseWarnings = []
+    if (modeInfo.conflict !== undefined) releaseErrors.push(modeInfo.conflict)
+    for (const [file, value] of [['storyboard.json', storyboard], ['timeline.json', timeline], ['audio/manifest.json', audio]]) {
+      if (value?.stale === true) releaseErrors.push(`${file} is marked stale`)
+    }
+    for (const configured of [production?.finalOutput, timeline?.finalOutput]) {
+      if (typeof configured === 'string' && inside(root, configured) === undefined) releaseErrors.push(`configured finalOutput escapes the episode: ${configured}`)
+    }
     const incomplete = []
     const staleMaster = path.join(root, 'exports', 'master.stale.json')
     if (existsSync(staleMaster)) {
       releaseErrors.push('exports/master.stale.json marks the existing master as built from a superseded narration; render and QA a new master, then remove the marker')
     }
-    master = findMaster(root, production, timeline, releaseErrors) ?? null
+    master = findMaster(root, production, timeline)
     if (master === null) {
-      incomplete.push('no final master found (expected exports/master.mp4 or production.finalOutput)')
+      const configured = [production?.finalOutput, timeline?.finalOutput].find((value) => typeof value === 'string' && value.length > 0)
+      incomplete.push(configured === undefined ? 'no final master found (expected exports/master.mp4 or production.finalOutput)' : `configured final master not found: ${configured}`)
     }
     if (master !== null) {
       const size = statSync(master.path).size
@@ -300,7 +311,7 @@ export async function validateEpisode(episodeDir, options = {}) {
 
     if (NARRATED_MODES.has(mode)) {
       try {
-        const gate = validateNarration(root, { requireSegments: true })
+        const gate = validateNarration(root, { requireSegments: true, productionMode: mode })
         if (!gate.ok) {
           releaseErrors.push(`narration G0 failed: ${gate.errors.slice(0, 3).join(' | ')}`)
         }
@@ -310,6 +321,19 @@ export async function validateEpisode(episodeDir, options = {}) {
       }
 
       const chunks = Array.isArray(audio.chunks) ? audio.chunks : []
+      const segmentFile = path.join(root, 'audio', 'segments.json')
+      const segments = existsSync(segmentFile) ? readJsonFile(segmentFile, 'audio/segments.json', releaseErrors)?.segments : undefined
+      if (Array.isArray(segments)) {
+        const expected = new Set(segments.map((segment) => segment.id))
+        const seenChunks = new Set()
+        for (const chunk of chunks) {
+          const id = chunk?.segmentId ?? chunk?.id
+          if (!expected.has(id)) releaseErrors.push(`audio chunk references unknown segment: ${id}`)
+          if (seenChunks.has(id)) releaseErrors.push(`audio chunk repeats segment: ${id}`)
+          seenChunks.add(id)
+        }
+        for (const id of expected) if (!seenChunks.has(id)) releaseErrors.push(`approved segment has no audio chunk: ${id}`)
+      }
       if (chunks.length === 0) {
         incomplete.push('audio manifest has no synthesized chunks')
       } else {
@@ -333,16 +357,25 @@ export async function validateEpisode(episodeDir, options = {}) {
           if (statSync(chunkPath).size < 44) releaseErrors.push(`${label} audio file is empty or header-only`)
           const chunkDuration = Number.isFinite(chunk.durationSec) ? chunk.durationSec : chunk.duration
           if (!Number.isFinite(chunkDuration) || chunkDuration <= 0) releaseErrors.push(`${label} durationSec must be positive and measured`)
-          else total += chunkDuration
-          if (chunk.sha256 !== undefined && sha256File(chunkPath) !== String(chunk.sha256).toLowerCase()) {
-            releaseErrors.push(`${label} sha256 does not match the file`)
+          if (typeof chunk.sha256 !== 'string' || !/^[a-f0-9]{64}$/i.test(chunk.sha256)) releaseErrors.push(`${label} requires a sha256`)
+          else if (sha256File(chunkPath) !== chunk.sha256.toLowerCase()) releaseErrors.push(`${label} sha256 does not match the file`)
+          const probe = runBounded('ffprobe', ['-v', 'error', '-show_entries', 'format=duration:stream=codec_type', '-of', 'json', chunkPath], { timeoutMs: 30_000, retries: 0 })
+          if (!probe.ok) incomplete.push(`${label} could not be verified with ffprobe`)
+          else {
+            try {
+              const parsed = JSON.parse(probe.stdout)
+              const measured = Number(parsed.format?.duration)
+              if (!parsed.streams?.some((stream) => stream.codec_type === 'audio')) releaseErrors.push(`${label} has no audio stream`)
+              if (!Number.isFinite(measured) || measured <= 0) releaseErrors.push(`${label} has no measurable duration`)
+              else {
+                total += measured
+                if (Number.isFinite(chunkDuration) && Math.abs(measured - chunkDuration) > Math.max(0.05, measured * 0.02)) releaseErrors.push(`${label} declared duration does not match measured duration`)
+              }
+            } catch { releaseErrors.push(`${label} probe returned invalid JSON`) }
           }
         }
-        if (Number.isFinite(duration) && total > 0) {
-          const timelineSpeech = timedScenes.reduce((sum, scene) => sum + (scene.durationSec ?? 0), 0)
-          if (Math.abs(total - timelineSpeech) > Math.max(3, timelineSpeech * 0.1)) {
-            releaseWarnings.push(`sum of audio chunk durations (${total.toFixed(2)}s) differs from timed scenes (${timelineSpeech.toFixed(2)}s) by more than 10%`)
-          }
+        if (Number.isFinite(duration) && total > duration + 0.05) {
+          releaseErrors.push(`audio chunk durations (${total.toFixed(2)}s) exceed timeline duration (${duration}s)`)
         }
         const narrationPath = path.join(root, 'narration.md')
         if (audio.narrationSha256 === undefined) {
@@ -382,24 +415,6 @@ export async function validateEpisode(episodeDir, options = {}) {
   }
 }
 
-function findMaster(root, production, timeline, errors) {
-  const configured = production?.finalOutput ?? timeline?.finalOutput
-  const candidates = []
-  if (typeof configured === 'string' && configured.length > 0) {
-    const absolute = inside(root, configured)
-    if (absolute === undefined) {
-      errors.push(`configured finalOutput escapes the episode: ${configured}`)
-      return undefined
-    }
-    candidates.push(absolute)
-  }
-  for (const relative of ['exports/master.mp4', 'exports/master.mov', 'exports/master.webm']) {
-    candidates.push(path.join(root, relative))
-  }
-  const found = candidates.find((file) => existsSync(file) && statSync(file).isFile())
-  if (found === undefined) return undefined
-  return { path: found, configured: typeof configured === 'string' }
-}
 
 function parseArgs(argv) {
   const args = { episode: undefined, release: false, json: false, mode: undefined }

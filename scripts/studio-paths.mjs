@@ -6,15 +6,13 @@
  * install and must never be used for user output.
  *
  * `dataRoot` is the user's production workspace: `projects/`, `library/` and
- * `.cache/`. It defaults to `codeRoot` (source checkout) and can be moved to
- * another disk or directory. Every helper and the DSH plugin resolve it with
- * this module so a CLI run and the runtime agree.
+ * `.cache/`. It defaults to the nearest initialized workspace containing cwd,
+ * or cwd itself when none exists.
  *
- * Precedence (first non-empty wins):
- *   1. explicit option / plugin row `dataRoot` (relative to `codeRoot`)
- *   2. `VIDEO_STUDIO_ROOT` environment variable (relative to cwd)
- *   3. `studio.config.json` beside this package (relative to its directory)
- *   4. `codeRoot`
+ * Precedence: explicit option / plugin row `dataRoot`, `VIDEO_STUDIO_ROOT`,
+ * `studio.config.json` beside the package, then the workspace. Explicit and
+ * environment values are relative to cwd; config values are relative to the
+ * config file directory.
  */
 import fs from 'node:fs'
 import path from 'node:path'
@@ -36,14 +34,14 @@ function absoluteAgainst(base, value) {
 
 /**
  * Read the optional `studio.config.json`.
- * @param {{ codeRoot?: string, env?: NodeJS.ProcessEnv }} [options]
+ * @param {{ codeRoot?: string, env?: NodeJS.ProcessEnv, cwd?: string }} [options]
  * @returns {{ path?: string, dataRoot?: string, source: string, error?: string }}
  */
 export function readStudioConfigFile(options = {}) {
   const root = options.codeRoot ?? codeRoot
   const env = options.env ?? process.env
   const file = nonEmpty(env.VIDEO_STUDIO_CONFIG)
-    ? absoluteAgainst(process.cwd(), env.VIDEO_STUDIO_CONFIG)
+    ? absoluteAgainst(options.cwd ?? process.cwd(), env.VIDEO_STUDIO_CONFIG)
     : path.join(root, CONFIG_FILE_NAME)
   if (!fs.existsSync(file)) return { source: 'none' }
   let parsed
@@ -66,7 +64,7 @@ export function readStudioConfigFile(options = {}) {
 }
 
 /**
- * Resolve the production data root without touching the filesystem.
+ * Resolve the production data root and discover initialized workspace ancestors.
  * @param {{
  *   dataRoot?: unknown,
  *   codeRoot?: string,
@@ -81,12 +79,12 @@ export function resolveDataRoot(options = {}) {
   const env = options.env ?? process.env
   const cwd = options.cwd ?? process.cwd()
   const warnings = []
-  const config = options.configFile ?? readStudioConfigFile({ codeRoot: root, env })
+  const config = options.configFile ?? readStudioConfigFile({ codeRoot: root, env, cwd })
   if (config.error !== undefined) warnings.push(config.error)
 
   if (nonEmpty(options.dataRoot)) {
     return {
-      dataRoot: absoluteAgainst(root, options.dataRoot),
+      dataRoot: absoluteAgainst(cwd, options.dataRoot),
       source: 'explicit',
       codeRoot: root,
       ...(config.path === undefined ? {} : { configPath: config.path }),
@@ -104,16 +102,27 @@ export function resolveDataRoot(options = {}) {
   }
   if (nonEmpty(config.dataRoot)) {
     return {
-      dataRoot: path.resolve(config.dataRoot),
+      dataRoot: absoluteAgainst(config.path ? path.dirname(config.path) : cwd, config.dataRoot),
       source: 'config',
       codeRoot: root,
       ...(config.path === undefined ? {} : { configPath: config.path }),
       warnings,
     }
   }
+  const start = path.resolve(cwd)
+  let workspace = start
+  while (true) {
+    if (fs.existsSync(path.join(workspace, 'library', 'catalog.json'))) break
+    const parent = path.dirname(workspace)
+    if (parent === workspace) {
+      workspace = start
+      break
+    }
+    workspace = parent
+  }
   return {
-    dataRoot: root,
-    source: 'package',
+    dataRoot: workspace,
+    source: workspace === start ? 'workspace' : 'workspace-ancestor',
     codeRoot: root,
     ...(config.path === undefined ? {} : { configPath: config.path }),
     warnings,
@@ -214,35 +223,34 @@ export function ensureWorkspace(options = {}) {
   }
 
   const catalog = path.join(data, 'library', 'catalog.json')
-  if (!fs.existsSync(catalog)) {
-    const builtinCatalog = path.join(builtin, 'catalog.json')
-    let copiedCatalog = false
-    if (withBuiltins && data !== code && fs.existsSync(builtinCatalog)) {
-      try {
-        const parsed = JSON.parse(fs.readFileSync(builtinCatalog, 'utf8'))
-        if (parsed !== null && typeof parsed === 'object' && Array.isArray(parsed.entries) && parsed.entries.length === 0) {
-          fs.copyFileSync(builtinCatalog, catalog)
-          copiedFiles.push(catalog)
-          copiedCatalog = true
-        }
-      } catch {
-        // Fall through to a clean catalog; a broken built-in catalog must not
-        // block workspace initialization.
-      }
-    }
-    if (!copiedCatalog) {
-      fs.writeFileSync(catalog, `${JSON.stringify({ schemaVersion: 1, entries: [] }, null, 2)}\n`)
-      created.push(catalog)
-    }
-  } else {
+  const builtinCatalog = path.join(builtin, 'catalog.json')
+  let content = `${JSON.stringify({ schemaVersion: 1, entries: [] }, null, 2)}\n`
+  let copiedCatalog = false
+  if (withBuiltins && data !== code && fs.existsSync(builtinCatalog)) {
     try {
-      const parsed = JSON.parse(fs.readFileSync(catalog, 'utf8'))
-      if (parsed === null || typeof parsed !== 'object' || !Array.isArray(parsed.entries)) {
-        throw new Error('entries must be an array')
+      const raw = fs.readFileSync(builtinCatalog, 'utf8')
+      const parsed = JSON.parse(raw)
+      if (parsed !== null && typeof parsed === 'object' && Array.isArray(parsed.entries) && parsed.entries.length === 0) {
+        content = raw
+        copiedCatalog = true
       }
-    } catch (error) {
-      throw new Error(`library catalog is not valid JSON with an entries array: ${catalog}: ${error.message}`)
+    } catch {
+      // A broken built-in catalog must not block workspace initialization.
     }
+  }
+  try {
+    fs.writeFileSync(catalog, content, { flag: 'wx' })
+    ;(copiedCatalog ? copiedFiles : created).push(catalog)
+  } catch (error) {
+    if (error.code !== 'EEXIST') throw error
+  }
+  try {
+    const parsed = JSON.parse(fs.readFileSync(catalog, 'utf8'))
+    if (parsed === null || typeof parsed !== 'object' || !Array.isArray(parsed.entries)) {
+      throw new Error('entries must be an array')
+    }
+  } catch (error) {
+    throw new Error(`library catalog is not valid JSON with an entries array: ${catalog}: ${error.message}`)
   }
 
   return {

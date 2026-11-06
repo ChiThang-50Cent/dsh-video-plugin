@@ -78,6 +78,35 @@ test('acceptance: a listener-first Vietnamese lesson passes both gates', (t) => 
   assert.match(result.data.editorial.data.caveat, /does not prove/)
 })
 
+test('severity-only high-risk claims require independent review and accuracy citation', (t) => {
+  const episode = passingEpisode(t, fixture('narration-negative.md'))
+  const file = path.join(episode.dir, 'claim-check.json')
+  const claims = JSON.parse(fs.readFileSync(file, 'utf8'))
+  delete claims.claims[0].risk
+  claims.claims[0].severity = 'high'
+  fs.writeFileSync(file, JSON.stringify(claims))
+  const reviewFile = path.join(episode.dir, 'narration-review.json')
+  const review = JSON.parse(fs.readFileSync(reviewFile, 'utf8'))
+  for (const item of review.criteriaEvidence.accuracy) item.claimRefs = []
+  review.independentReview = { required: false, status: 'missing' }
+  review.reviewer = { ...review.reviewer, kind: 'author', method: 'draft' }
+  fs.writeFileSync(reviewFile, JSON.stringify(review))
+  const result = validateNarration(episode.dir)
+  assert.equal(result.ok, false)
+  assert.match(result.errors.join('\n'), /independent/i)
+  assert.match(result.errors.join('\n'), /high-risk claim/i)
+})
+
+test('documented independent reviewer is distinct and reads the full script', () => {
+  const markdown = fs.readFileSync(path.join(here, '../skills/video-narration/references/script-review.md'), 'utf8')
+  const example = [...markdown.matchAll(/```json\n([\s\S]*?)\n```/g)]
+    .map((match) => { try { return JSON.parse(match[1]) } catch { return null } })
+    .find((item) => item?.independentReview?.reviewer)
+  assert.ok(example)
+  assert.notEqual(example.reviewer.id, example.independentReview.reviewer.id)
+  assert.equal(example.independentReview.reviewer.readFullScript, true)
+})
+
 test('acceptance: a documentary passes without mathematics', (t) => {
   const narration = fixture('narration-documentary.md')
   const parsed = parseNarration(narration)
