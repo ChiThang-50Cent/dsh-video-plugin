@@ -178,6 +178,8 @@ node scripts/validate-episode.mjs <episode> --release    # delivery
 
 - Default: at most **two concurrent** scene workers. `maxDepth` (nesting) is a different control.
 - Workers own `work/<task-id>/`; the main agent owns narration, global timeline, assets and library promotion.
+- Generate worker prompts with `node scripts/worker-brief.mjs <episode> --scene <scene-id> --task <task-id> --wave <wave-id> --out <brief-file>` and dispatch the file verbatim. It reads the project style, production, storyboard, measured timeline, relevant narration and `<episode>/worker-plan.json` (override with `--plan`); each plan worker's `id` is its task id and `sceneId` identifies the scene. Only custom C scenes are delegated. Use the same wave id for the entire wave; without `--wave`, the task id is used for a single-worker wave.
+- The tool reports each block's UTF-8 byte length and SHA-256 on stderr, or in JSON with `--json`; `--json` without `--out` includes the full brief. The blocks are ordered studio contract, episode context, scene assignment. Keep generated files outside the episode during a wave so they cannot invalidate its snapshot. Snapshot and sandbox rules still apply.
 - Validate plans and results before integration:
 
 ```bash

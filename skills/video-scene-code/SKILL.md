@@ -4,6 +4,7 @@ description: Implement or patch video scene code and renderer adapters. Use only
 ---
 
 # Scene coding contract
+Use the generated worker brief verbatim as the assignment; it contains the shared contract and scene-specific inputs. Report missing prerequisites rather than guessing.
 
 1. Read the assigned `scene.json`, measured timing, frozen narration segments, scene style, closest PASS scene, supported backend and output contract. Do not reread an unrelated project tree.
 2. Use the built-in Skia adapter for code-animated 2D scenes when preflight passes; FFmpeg handles compositing and delivery. Remotion, browser canvas/SVG and Blender remain opt-in when verified and appropriate. Do not install packages without authorization.
