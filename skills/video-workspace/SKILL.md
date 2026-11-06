@@ -10,9 +10,9 @@ description: Initialize and organize video workspaces, series, episode files, as
 ## Roots and initialization
 
 - **Code root** is the installed plugin (skills, scripts, kit, standing rules, built-in library payload). It may be read-only when installed from npm.
-- **Data root** is the user's production data. It defaults to the code root and can be set with `--data-root`, `VIDEO_STUDIO_ROOT`, or `studio.config.json`; one resolver is shared by the plugin and every CLI helper.
+- **Data root** is the user's production data. It defaults to the session workspace (or the nearest ancestor containing `library/catalog.json`) and can be overridden with `--data-root`, `VIDEO_STUDIO_ROOT`, or `studio.config.json`; one resolver is shared by the plugin and every CLI helper.
 - Initialize idempotently: `node <studio>/scripts/init-workspace.mjs [--data-root <dir>]`. It creates `projects/`, `library/`, `library/styles/`, `library/scenes/`, `library/templates/`, `.cache/`, a catalog and missing built-in style files. Existing files are never overwritten.
-- `new-episode.mjs` runs the same initialization, so an npm-installed plugin with an external data root starts cleanly. A project is `projects/<slug>/`; an episode is `projects/<slug>/episodes/<ep-id>/`.
+- `new-episode.mjs` runs the same initialization, so a fresh workspace needs no separate init step. A project is `projects/<slug>/`; an episode is `projects/<slug>/episodes/<ep-id>/`.
 
 ## Episode artifacts
 
