@@ -3,3 +3,4 @@ node_modules/
 **/work/
 **/exports/*.tmp.*
 .DS_Store
+/tts.config.json

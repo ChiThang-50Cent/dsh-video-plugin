@@ -38,13 +38,12 @@ node <studio>/scripts/audio-preflight.mjs --voice-package <id> \
 
 ## Batch synthesis
 
-After the preflight passes, synthesize the whole `audio/segments.json` with one long-lived process that loads the model once:
+After the preflight passes, synthesize the whole `audio/segments.json` with one long-lived process that loads the model once. With a saved runtime (`<dataRoot>/tts.config.json`, from `setup-tts.mjs`; `setup-tts.mjs --show` prints it) no engine flags are needed; if none is saved, ask for the paths and run `setup-tts.mjs` rather than retyping them per command:
 
 ```bash
-node <studio>/scripts/synthesize-narration.mjs <episode> \
-  --python /path/to/venv/bin/python --model <checkpoint-dir> \
-  --language vi [--voice-package <id>] \
-  --require-gpu [--timeout-ms 120000] [--overall-timeout-ms 3600000] [--retries 1]
+node <studio>/scripts/synthesize-narration.mjs <episode> [--voice-package <id>] \
+  [--python <venv>/bin/python --model <checkpoint-dir> --require-gpu] \
+  [--timeout-ms 120000] [--overall-timeout-ms 3600000] [--retries 1]
 ```
 
 - It refuses segments whose `narrationSha256` differs from `narration.md`, refuses a helper that loads on CPU when CUDA was requested, and kills a segment that exceeds its timeout, retrying with a fresh helper within `--retries`.

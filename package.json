@@ -1,6 +1,6 @@
 {
   "name": "portable-video-studio",
-  "version": "0.6.0",
+  "version": "0.7.0",
   "private": true,
   "type": "module",
   "description": "DSH bundle adding the Video Producer and Video Scene Worker agent presets plus studio skills that work from any workspace.",
@@ -54,6 +54,8 @@
     "qa:audio": "node scripts/qa-audio.mjs",
     "audio:preflight": "node scripts/audio-preflight.mjs",
     "audio:synthesize": "node scripts/synthesize-narration.mjs",
+    "tts:setup": "node scripts/setup-tts.mjs",
+    "status": "node scripts/studio-status.mjs",
     "render:episode": "node scripts/render-episode.mjs",
     "style:new": "node scripts/new-visual-style.mjs",
     "style:refs": "node scripts/extract-style-refs.mjs",

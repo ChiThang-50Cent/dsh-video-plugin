@@ -14,7 +14,7 @@
 import { createHash } from 'node:crypto'
 import fs from 'node:fs'
 import path from 'node:path'
-import { episodeContext } from './episode-artifacts.mjs'
+import { episodeContext, episodeDataRoot } from './episode-artifacts.mjs'
 
 export const VOICE_ID = /^[a-z][a-z0-9-]{0,63}$/
 
@@ -104,7 +104,7 @@ export function resolveVoicePackage(options = {}) {
   if (options.episodeRoot) {
     const context = fs.existsSync(path.join(options.episodeRoot, 'production.json'))
       ? episodeContext(options.episodeRoot)
-      : { dataRoot: path.resolve(options.episodeRoot, '..', '..', '..', '..'), production: {}, project: {} }
+      : { dataRoot: episodeDataRoot(options.episodeRoot), production: {}, project: {} }
     dataRoot ??= context.dataRoot
     if (id === undefined && context.production.voicePackage !== undefined) { id = context.production.voicePackage; source = 'production.json' }
     else if (id === undefined && context.project.voicePackage !== undefined) { id = context.project.voicePackage; source = 'project.json' }

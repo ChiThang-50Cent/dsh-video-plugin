@@ -4,7 +4,7 @@
 
 Do not hard-code genres, renderers, TTS providers or machine paths. Invoke the matching `video-*` skill; `video-produce` coordinates full deliverables. Skills in `skills/` load profile-wide, even outside this checkout.
 
-Resolve `scripts/` against the code root and `projects/`, `library/`, `.cache/` against the data root in the skill header. The data root defaults to the workspace unless overridden. From the workspace, run the code root's `node scripts/studio-root.mjs` for effective roots; `node scripts/init-workspace.mjs` initializes the data root idempotently.
+Resolve `scripts/` against the code root and `projects/`, `library/`, `.cache/` against the data root in the skill header. The data root defaults to the workspace unless overridden. From the workspace, run the code root's `node scripts/studio-root.mjs` for effective roots; `node scripts/init-workspace.mjs` initializes the data root idempotently. `node scripts/studio-status.mjs` reports what is set up (speech engine, voices, styles, series) and the next missing step; for usage or first-time-setup questions follow `docs/getting-started.md` (skill `video-workspace`). Machine paths for speech live only in `<dataRoot>/tts.config.json`, written by `scripts/setup-tts.mjs` after a passing sample; never hard-code them elsewhere.
 
 ## Workflow
 

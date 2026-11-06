@@ -1,11 +1,15 @@
 ---
 name: video-workspace
-description: Initialize and organize video workspaces, series, episode files, assets, caches and releases. Use for workspace setup or file organization ("tạo workspace", "tạo không gian làm việc", "quản lý dự án video"); use video-intake to summarize a request and its sources.
+description: Initialize and organize video workspaces, series, episode files, assets, caches and releases, and explain how to use the studio. Use for workspace setup, first-time setup, file organization or usage questions ("how do I use this", "getting started", "hướng dẫn sử dụng", "bắt đầu thế nào", "tạo workspace", "quản lý dự án video"); use video-intake to summarize a request and its sources.
 ---
 
 # Workspace and provenance
 
 `AGENTS.md` owns standing instructions. Resolve `projects/`, `library/`, `.cache/` and `scripts/` against the `Studio code root` / `Studio data root` lines at the top of each skill, never the session working directory. `scripts/studio-root.mjs` prints them as JSON.
+
+## Usage questions and first-time setup
+
+When the user asks how to use the studio or what to do next, run `node <studio>/scripts/studio-status.mjs` (read-only), read `docs/getting-started.md` at the code root, and answer for this machine: say what is already set up, then give only the missing steps from `nextSteps` with the exact commands. Do not recite the whole guide. Speech setup is `setup-tts.mjs` once per machine (writes `<dataRoot>/tts.config.json` only after a passing sample) and `new-voice.mjs` once per narrator; never run a setup step that installs packages or changes `$DSH_HOME` without the user's approval.
 
 ## Roots and initialization
 

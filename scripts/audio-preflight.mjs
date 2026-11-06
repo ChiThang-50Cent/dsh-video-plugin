@@ -24,6 +24,9 @@
  * recording, transcript and language; combining it with --voice-reference/--ref-text
  * or a different --provider is rejected.
  *
+ * `<dataRoot>/tts.config.json` (written by setup-tts.mjs) fills --provider-command,
+ * --model and --require-gpu for its provider when they are not given.
+ *
  * Exit: 0 ready for batch, 1 not ready/unverified, 2 usage.
  */
 import fs from 'node:fs'
@@ -32,6 +35,7 @@ import path from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { probeCommand, runBounded } from './lib/bounded.mjs'
 import { applyVoicePackage, loadVoicePackage } from './lib/voice.mjs'
+import { applyTtsConfig, readTtsConfig } from './lib/tts-config.mjs'
 import { resolveDataRoot } from './studio-paths.mjs'
 
 export const PROVIDER_DEFINITIONS = {
@@ -190,12 +194,15 @@ function sandboxGpuHidden() {
  * @param {object} [deps]
  */
 export function runAudioPreflight(options = {}, deps = {}) {
+  const dataRoot = path.resolve(options.dataRoot ?? resolveDataRoot().dataRoot)
   let voicePackage = null
   if (options.voicePackage !== undefined) {
-    const pkg = loadVoicePackage(options.voicePackage, path.resolve(options.dataRoot ?? resolveDataRoot().dataRoot))
+    const pkg = loadVoicePackage(options.voicePackage, dataRoot)
     options = applyVoicePackage(options, pkg)
     voicePackage = { id: pkg.id, sha256: pkg.sha256 }
   }
+  // setup-tts passes ttsConfig: false so it tests the candidate runtime, not the saved one.
+  options = applyTtsConfig(options, options.ttsConfig === false ? null : readTtsConfig(dataRoot))
   const providerId = options.provider
   const errors = []
   const warnings = []
@@ -330,6 +337,7 @@ export function runAudioPreflight(options = {}, deps = {}) {
     refText: options.refText ?? null,
     voiceReference: voiceReference ?? null,
     voicePackage,
+    ttsConfig: options.ttsConfig,
     sample,
     checks,
     status,

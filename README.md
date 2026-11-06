@@ -2,7 +2,7 @@
 
 This repository is two things in one checkout: an installable **DSH bundle** that adds two Agent Presets (`video-producer`, `video-scene-worker`), and a portable **video-studio workspace** with nine skills, contract examples, deterministic helpers and a per-episode tree. The built-in Skia adapter is the default for code-animated 2D scenes when preflight passes; no `math-motion` project, OmniVoice, Python runtime, or particular genre is required.
 
-Current version: 0.6.0. The 0.6 line adds switchable visual styles and narrator voice packages, a parallel cached Skia renderer, batch GPU speech and a loudness gate. The 0.5 line made narration quality a real evidence-based gate. Every change is recorded in [CHANGELOG.md](CHANGELOG.md); releases are tagged `v<version>`.
+Current version: 0.7.0. The 0.7 line adds a first-use guide ([docs/getting-started.md](docs/getting-started.md)), a saved speech-engine runtime and a setup status report. The 0.6 line adds switchable visual styles and narrator voice packages, a parallel cached Skia renderer, batch GPU speech and a loudness gate. The 0.5 line made narration quality a real evidence-based gate. Every change is recorded in [CHANGELOG.md](CHANGELOG.md); releases are tagged `v<version>`.
 
 ## Contents
 
@@ -13,23 +13,20 @@ Current version: 0.6.0. The 0.6 line adds switchable visual styles and narrator 
 - `scripts/`: Node helpers for rendering, workspace init, episode creation, narration integrity/editorial gates, revision, narration lint, editorial pre-scan, scene promotion, episode lint/release, audio preflight/QA, media QA, worker validation and log-based metrics.
 - `library/`: approved scene catalog, templates and narration style packages.
 - `projects/`: one directory per series; `episodes/` holds self-contained episodes.
-- `docs/`: architecture, runbook, acceptance checks, examples and DSH notes.
+- `docs/`: **getting started** ([docs/getting-started.md](docs/getting-started.md), the first thing to read after installing), architecture, acceptance checks, examples and DSH notes.
 
 ## Fresh machine
 
-1. Install Node.js 20+ and DSH `0.2.2-rc.1` (pin the package explicitly):
+The step-by-step first-use guide is [docs/getting-started.md](docs/getting-started.md); `node scripts/studio-status.mjs` shows what is set up and the next step. In short:
 
-   `npx -y @deepseek-ai/dsh@0.2.2-rc.1 --version`
-
-2. Extract this ZIP to `video-studio`, enter it and optionally `git init`.
-
-3. Run `node scripts/preflight.mjs` to inspect render/audio tools and the execution environment's GPU visibility and encoder recommendation. Preflight installs nothing and does not treat GPU hardware as a ready TTS backend. For optional GPU access inside DSH, configure the home-level sandbox runner and verify it as described in [GPU inside the DSH sandbox](docs/dsh.md#gpu-inside-the-dsh-sandbox); review the security and reversion instructions first.
+1. Install Node.js 20+, FFmpeg and DSH `>=0.2.2-rc.1 <0.3.0`; run `npm install` in this checkout.
+2. Run `node scripts/preflight.mjs` to inspect render/audio tools and the execution environment's GPU visibility and encoder recommendation. Preflight installs nothing and does not treat GPU hardware as a ready TTS backend. For GPU access inside DSH, configure the home-level sandbox runner and verify it as described in [GPU inside the DSH sandbox](docs/dsh.md#gpu-inside-the-dsh-sandbox); review the security and reversion instructions first.
 
    The built-in Skia adapter needs its installed Node dependencies and FFmpeg. Its CPU and GPU rendering engines are separate from the video encoder: a CPU-rendered scene can use NVENC if its real encode probe passes. GPU rendering or NVENC inside DSH requires the GPU sandbox runner and verification in that same sandbox context.
 
-4. Install the bundle from the Web **Plugins** page (local path) or with `plugin_manager` `action: install_bundle`. The bundle applies `cordis.patch.yml` and shows `Video studio presets`.
-
-5. Select `video-producer` in a new session, then invoke `/video-produce` or ask naturally. The skills are available to every session in the profile.
+3. Install the bundle from the Web **Plugins** page (local path) or with `plugin_manager` `action: install_bundle`. The bundle applies `cordis.patch.yml` and shows `Video studio presets`.
+4. For narrated videos, save the speech engine once with `scripts/setup-tts.mjs` and create a narrator with `scripts/new-voice.mjs` (see [Audio preflight and runtime](#audio-preflight-and-runtime)).
+5. Select `video-producer` in a new session, then invoke `/video-produce` or ask naturally. The skills are available to every session in the profile; asking "how do I use this?" makes the agent check the setup and answer from the guide.
 
 ### Using the studio from another workspace
 
@@ -142,6 +139,14 @@ Fill the through-line, claims and cited review, rename the three files to their 
 From the workspace, create an episode with `node /path/to/video-studio/scripts/new-episode.mjs <series> <ep-001> --mode silent`. A fresh episode is structurally lint-clean but release status `INCOMPLETE`.
 
 ## Audio preflight and runtime
+
+The speech engine is saved once per machine. `setup-tts.mjs` runs a real sample with the given interpreter, model and environment, and only when it passes writes `<dataRoot>/tts.config.json`; `audio-preflight` and `synthesize-narration` then fill unset `--python`, `--model`, `--provider-command`, `--require-gpu` and environment from it (explicit flags win; the file applies only to its own provider). `--show` prints it; a failed run leaves the previous file untouched.
+
+```bash
+node scripts/setup-tts.mjs --python /venv/bin/python --model /path/to/OmniVoice-checkpoint \
+  --voice-package narrator-vi --require-gpu --env HF_HOME=/path/to/hf --env HF_HUB_OFFLINE=1
+node scripts/synthesize-narration.mjs <episode>     # no engine paths needed afterwards
+```
 
 The narrator voice is a package `<dataRoot>/library/voices/<id>/` (reference recording, exact transcript, language, rights), selected by `production.json.voicePackage` > `project.json.voicePackage`. There is no default voice. Create one and listen to it before use:
 

@@ -7,13 +7,17 @@ import { createInterface } from 'node:readline'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { findCommand, runBounded } from './lib/bounded.mjs'
 import { applyVoicePackage, resolveVoicePackage } from './lib/voice.mjs'
+import { applyTtsConfig, readTtsConfig } from './lib/tts-config.mjs'
+import { episodeDataRoot } from './lib/episode-artifacts.mjs'
+
+const DEFAULTS = { provider: 'omnivoice', python: 'python', model: 'k2-fsa/OmniVoice', device: 'cuda' }
 
 const helper = fileURLToPath(new URL('./lib/tts/omnivoice_batch.py', import.meta.url))
 const hash = (value) => createHash('sha256').update(value).digest('hex')
 const readJson = (file) => JSON.parse(fs.readFileSync(file, 'utf8'))
 
 function parseArgs(argv) {
-  const options = { python: 'python', model: 'k2-fsa/OmniVoice', device: 'cuda', timeoutMs: 120000, overallTimeoutMs: 3600000, retries: 1, segments: 'audio/segments.json' }
+  const options = { timeoutMs: 120000, overallTimeoutMs: 3600000, retries: 1, segments: 'audio/segments.json' }
   const names = { '--python': 'python', '--helper': 'helper', '--model': 'model', '--device': 'device', '--voice-package': 'voicePackage', '--data-root': 'dataRoot', '--voice-reference': 'voiceReference', '--ref-text': 'refText', '--language': 'language', '--timeout-ms': 'timeoutMs', '--overall-timeout-ms': 'overallTimeoutMs', '--retries': 'retries', '--segments': 'segments' }
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i]
@@ -31,7 +35,6 @@ function parseArgs(argv) {
   }
   if (!options.episode) throw new Error('episode is required')
   if ((options.voiceReference === undefined) !== (options.refText === undefined)) throw new Error('--voice-reference and --ref-text go together')
-  if (options.requireGpu && !/^cuda(?::\d+)?$/.test(options.device)) throw new Error('--require-gpu requires a CUDA device; refusing CPU fallback')
   return options
 }
 
@@ -88,9 +91,22 @@ function selectVoice(episode, options) {
   return { options: merged, voicePackage: { id: pkg.id, sha256: pkg.sha256, source: pkg.source } }
 }
 
+/**
+ * Engine paths: explicit options > `<dataRoot>/tts.config.json` (setup-tts) > defaults.
+ * Exported for tests and for callers that need the effective runtime without synthesizing.
+ */
+export function resolveRuntime(input) {
+  const dataRoot = input.dataRoot ? path.resolve(input.dataRoot) : episodeDataRoot(path.resolve(input.episode))
+  const options = applyTtsConfig({ ...input, provider: input.provider ?? 'omnivoice' }, readTtsConfig(dataRoot), DEFAULTS)
+  if (options.provider !== 'omnivoice') throw new Error(`synthesize-narration drives OmniVoice; provider ${options.provider} is not supported`)
+  if (options.requireGpu && !/^cuda(?::\d+)?$/.test(options.device)) throw new Error('--require-gpu requires a CUDA device; refusing CPU fallback')
+  return options
+}
+
 export async function synthesize(input) {
+  const runtime = resolveRuntime(input)
   const episode = fs.realpathSync(path.resolve(input.episode))
-  const { options, voicePackage } = selectVoice(episode, input)
+  const { options, voicePackage } = selectVoice(episode, runtime)
   const segments = readJson(path.resolve(episode, options.segments))
   const narrationSha256 = hash(fs.readFileSync(path.join(episode, 'narration.md')))
   if (segments.narrationSha256 !== narrationSha256) throw new Error('segments are stale relative to narration.md')

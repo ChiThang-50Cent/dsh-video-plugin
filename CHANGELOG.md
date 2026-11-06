@@ -6,6 +6,22 @@ Every change that alters behaviour, a contract or a command adds an entry under 
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-11-06
+
+### Added
+- `docs/getting-started.md`: first-use guide after installing the bundle (install, GPU sandbox, workspace, speech engine, voice, look, first video, common requests, troubleshooting).
+- `scripts/setup-tts.mjs` (`npm run tts:setup`): verifies the speech engine with a real sample and only then saves `<dataRoot>/tts.config.json` (interpreter, model, provider command, GPU requirement, environment, verification record); `--show` prints it.
+- `scripts/studio-status.mjs` (`npm run status`): read-only report of version, roots, saved engine, voices, visual styles, series and episodes, with the next missing setup steps.
+- The `video-workspace` skill answers usage and first-time-setup questions from the guide and the current machine status.
+- Example requests for setup, usage questions and re-voicing/restyling.
+
+### Changed
+- `synthesize-narration.mjs` and `audio-preflight.mjs` fill unset engine options and environment from `tts.config.json` for its provider; explicit flags still win. `synthesize-narration` no longer assumes `python` on PATH and the `k2-fsa/OmniVoice` repo id when a runtime is saved.
+- README "Fresh machine" points to the guide and no longer refers to a ZIP checkout.
+
+### Migration
+- Run `setup-tts.mjs` once per data root with the paths you previously passed on every audio command; the old flags keep working.
+
 ## [0.6.0] - 2026-11-06
 
 ### Added
@@ -58,7 +74,8 @@ Every change that alters behaviour, a contract or a command adds an entry under 
 ### Added
 - Initial portable video studio DSH bundle: `video-producer` and `video-scene-worker` presets, nine `video-*` skills, workspace kit and library.
 
-[Unreleased]: https://github.com/ChiThang-50Cent/dsh-video-plugin/compare/v0.6.0...HEAD
+[Unreleased]: https://github.com/ChiThang-50Cent/dsh-video-plugin/compare/v0.7.0...HEAD
+[0.7.0]: https://github.com/ChiThang-50Cent/dsh-video-plugin/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/ChiThang-50Cent/dsh-video-plugin/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/ChiThang-50Cent/dsh-video-plugin/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/ChiThang-50Cent/dsh-video-plugin/releases/tag/v0.4.0

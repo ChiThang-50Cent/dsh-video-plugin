@@ -1,5 +1,34 @@
 # Example requests to DSH after installation
 
+First-time setup is in [getting-started.md](getting-started.md). Each request below assumes the setup it needs is done; `node <studio>/scripts/studio-status.mjs` shows what is missing.
+
+## How do I use this?
+
+```text
+How do I use the video studio? What is still missing on this machine?
+```
+
+The agent runs `studio-status.mjs`, reads the getting-started guide and answers with only the missing steps and their commands.
+
+## Set up speech on a new machine
+
+```text
+Set up TTS: OmniVoice lives in /opt/tts/.venv, the model snapshot is
+/opt/tts/hf/hub/models--k2-fsa--OmniVoice/snapshots/<rev>, offline HF cache /opt/tts/hf.
+Use my recording voice/take.wav ("exact words…") as the series narrator; I own the voice.
+```
+
+The agent runs `setup-tts.mjs` (saves the engine only after a passing GPU sample) and `new-voice.mjs`, reports the sample path for you to listen to (it cannot judge timbre), and sets `voicePackage` on the series once you approve the sample.
+
+## Re-voice or restyle an existing episode
+
+```text
+/video-produce
+Switch the software-architecture series to the voice "narrator-2" and the visual style
+"midnight". Re-synthesize and re-render ep-803 to exports/master-v2.mp4; keep the
+released master untouched and run the release gate on the new cut.
+```
+
 ## Vietnamese mathematics episode
 
 ```text

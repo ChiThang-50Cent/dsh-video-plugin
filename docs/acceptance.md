@@ -31,6 +31,7 @@
 - [ ] GPU requirement failure stops rather than silently using CPU; jobs have explicit timeout/retry policy.
 - [ ] OmniVoice preflight passes `--model`/`--ref-text`; `synthesize-narration.mjs` loads the model once, refuses a CPU device, enforces per-segment and overall timeouts, and reuses only segments whose fingerprint and file hash match.
 - [ ] Voice packages: `production.json.voicePackage` overrides `project.json.voicePackage`; no selection stops synthesis instead of borrowing a voice; `new-voice.mjs` rejects an unsuitable reference or missing rights/transcript and never overwrites; a package cannot be mixed with `--voice-reference`; switching or re-recording a voice re-synthesizes every segment; release fails unless `audio/manifest.json` records the selected package's current hash.
+- [ ] `setup-tts.mjs` saves `tts.config.json` only after a passing sample, tests the candidate (not the saved) runtime and keeps the previous file on failure; audio commands then need no engine paths, explicit flags win and another provider's runtime is ignored. `studio-status.mjs` lists missing setup steps in order.
 - [ ] `qa-audio.mjs` checks numbers/operators/omissions and optional audio silence/clipping; ASR evidence is not truth.
 
 ## Scene/render/QA

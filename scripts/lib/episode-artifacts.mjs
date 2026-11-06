@@ -22,10 +22,15 @@ function readJson(file, label) {
   }
 }
 
+/** Data root implied by the episode layout `<dataRoot>/projects/<slug>/episodes/<episode>`. */
+export function episodeDataRoot(episodeRoot) {
+  return path.resolve(episodeRoot, '..', '..', '..', '..')
+}
+
 /** Episode layout is `<dataRoot>/projects/<slug>/episodes/<episode>`; project.json is optional. */
 export function episodeContext(episodeRoot) {
   const projectDir = path.resolve(episodeRoot, '..', '..')
-  const dataRoot = path.resolve(projectDir, '..', '..')
+  const dataRoot = episodeDataRoot(episodeRoot)
   const production = readJson(path.join(episodeRoot, 'production.json'), 'production.json')
   const projectFile = path.join(projectDir, 'project.json')
   const project = existsSync(projectFile) ? readJson(projectFile, 'project.json') : {}
